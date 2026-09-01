@@ -1,0 +1,43 @@
+# 최소 티어 예시: 서비스 2개짜리 프로젝트, overlay 없음, k3d 없음.
+# 남는 것은 주소 규칙과 소유 규칙뿐이다 — 그것만으로도 병렬 에이전트의
+# 포트 쟁탈과 중복 스택은 사라진다.
+version: 1
+
+project:
+  slug: sideapp
+
+addressing:
+  tld: localhost                # *.localhost — DNS 셋업 없음, 개인 머신용
+  scheme:
+    shared: "{service}.{project}.{tld}"   # 한 머신 여러 프로젝트 대비
+    # overlay 스킴 없음 — overlay: none
+  ports:
+    blocks: { api: 6000, web: 6100 }      # 다른 프로젝트의 블록과 안 겹치게
+    registry: README.md
+
+runtime:
+  default: planner
+  single_stack: true
+  writers: 1
+  profiles:
+    planner:
+      backend: docker-compose
+      compose_file: docker-compose.yml
+  commands:
+    status: docker compose ps
+    up: docker compose up -d --wait
+
+services:
+  api: { kind: api, port: 6001, health: /health, reflect: restart }
+  web: { kind: web, port: 6101, health: /, reflect: source }
+
+overlay: none
+
+data:
+  infra: machine              # 엔진은 머신 공유 인프라(dev-infra infra/) — 직접 안 띄운다
+  engines:
+    pg: [sideapp]             # infra/bin/provision pg sideapp 으로 만든 것
+    redis: { prefix: "sideapp:" }
+  migrate: pnpm run db:migrate
+  fixtures: [seed-script]
+  forbid_direct_db_writes: true

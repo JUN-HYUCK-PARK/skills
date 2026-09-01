@@ -1,0 +1,14 @@
+{
+  "name": "dev-infra",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "devinfra": "./infra/bin/cli.mjs"
+  },
+  "scripts": {
+    "test": "node --test infra/bin/"
+  },
+  "dependencies": {
+    "yaml": "^2.5.0"
+  }
+}

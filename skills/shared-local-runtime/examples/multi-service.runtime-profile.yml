@@ -1,0 +1,61 @@
+# 멀티서비스 티어 예시: 백엔드 4개 + 웹 3개, k3d overlay 사용.
+# 프로젝트·서비스 이름은 전부 가상이다 — 값의 모양을 보여주는 용도.
+version: 1
+
+project:
+  slug: acme                    # namespace 생략 = "acme"가 모든 분리 단위의 이름
+                                # (DB·프리픽스·bucket·k8s namespace)
+
+addressing:
+  tld: local.acme.dev           # 소유 실도메인 방식 (와일드카드 → 127.0.0.1).
+  scheme:                       # 프로젝트 하나가 TLD를 독점하므로 {project} 없이 씀
+    shared: "{service}.{tld}"
+    overlay: "{service}--{env}.{tld}"
+  ports:
+    blocks: { api: 5000, web: 5100 }
+    registry: README.md
+
+runtime:
+  default: developer
+  single_stack: true
+  writers: 1
+  profiles:
+    planner:                    # 가벼운 확인·기획용
+      backend: docker-compose
+      compose_file: docker-compose.yml
+    developer:                  # overlay가 필요한 개발용
+      backend: k3d
+      cluster: local
+  commands:
+    profile: node tools/dev-environment.mjs profile
+    status: node tools/dev-environment.mjs status
+    up: node tools/dev-environment.mjs up --apply
+    overlay: node tools/dev-overlay.mjs
+
+services:
+  auth-api:       { kind: api, port: 5001, health: /health,     reflect: rebuild }
+  catalog-api:    { kind: api, port: 5002, health: /api/health, reflect: rebuild } # health 경로가 서비스마다 다르다 — 실측값
+  order-api:      { kind: api, port: 5003, health: /health,     reflect: source }  # 백엔드지만 source 서빙 — 실측해서 적은 것
+  billing-worker: { kind: worker, port: 5004,                   reflect: rebuild }
+  store-web:      { kind: web, port: 5101, health: /,           reflect: source }
+  admin-web:      { kind: web, port: 5102, health: /,           reflect: source }
+  kiosk:          { kind: web, port: 5103, health: /,           reflect: restart } # env가 번들 시점에 박히는 류
+
+overlay:
+  attachable: [store-web, admin-web, kiosk, catalog-api, order-api]
+  shared_only: [auth-api, billing-worker]   # 인증·컨슈머류 — 절대 attach 금지
+  image_tag: full-git-sha
+
+data:
+  infra: machine              # 엔진은 머신 공유 인프라(dev-infra infra/) — 직접 안 띄운다
+  engines:
+    mysql: [acme]             # infra/bin/provision mysql acme 로 만든 것
+    redis: { prefix: "acme:" }
+    kafka: { topic_prefix: "acme." }
+  migrate: pnpm run db:migrate:local
+  fixtures: [ui, official-api, fixture-endpoint, seed-script]
+  forbid_direct_db_writes: true
+
+qa:
+  auth_file: e2e-auth.yml
+  default_account: default

@@ -1,0 +1,5 @@
+# 머신 로컬 상태 — 레포 내용이 아니다
+*.local.md
+*.local.yml
+
+node_modules/

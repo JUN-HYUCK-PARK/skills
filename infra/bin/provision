@@ -1,0 +1,56 @@
+#!/usr/bin/env bash
+# 머신 공유 인프라에 프로젝트용 데이터베이스와 사용자를 멱등하게 만든다.
+#
+#   provision mysql <name> [password]     # database <name> + user <name>
+#   provision pg    <name> [password]     # role <name> + database <name>
+#
+# 몇 번을 다시 돌려도 안전하다. 성공하면 접속 URL 한 줄을 찍는다.
+set -euo pipefail
+
+usage() {
+  echo "usage: provision (mysql|pg) <name> [password]" >&2
+  exit 1
+}
+
+engine=${1-}
+name=${2-}
+pass=${3-${name}}
+[[ -n ${engine} && -n ${name} ]] || usage
+[[ ${name} =~ ^[a-z][a-z0-9_]*$ ]] || {
+  echo "provision: name must match [a-z][a-z0-9_]* — got '${name}'" >&2
+  exit 1
+}
+
+require_container() {
+  docker inspect -f '{{.State.Running}}' "$1" 2>/dev/null | grep -q true || {
+    echo "provision: container $1 is not running. Start infra first:" >&2
+    echo "  docker compose -f \"$(dirname "$0")/../docker-compose.yml\" up -d --wait" >&2
+    exit 1
+  }
+}
+
+case ${engine} in
+  mysql)
+    require_container dev-mysql8
+    docker exec -i dev-mysql8 mysql -uroot -proot 2>/dev/null <<SQL
+CREATE DATABASE IF NOT EXISTS \`${name}\`;
+CREATE USER IF NOT EXISTS '${name}'@'%' IDENTIFIED BY '${pass}';
+GRANT ALL PRIVILEGES ON \`${name}\`.* TO '${name}'@'%';
+FLUSH PRIVILEGES;
+SQL
+    echo "mysql://${name}:${pass}@127.0.0.1:3306/${name}"
+    ;;
+  pg)
+    require_container dev-pg16
+    docker exec -i dev-pg16 psql -U postgres -v ON_ERROR_STOP=1 --quiet <<SQL
+SELECT 'CREATE ROLE ${name} LOGIN PASSWORD ''${pass}'''
+WHERE NOT EXISTS (SELECT FROM pg_roles WHERE rolname = '${name}')\gexec
+SELECT 'CREATE DATABASE ${name} OWNER ${name}'
+WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = '${name}')\gexec
+SQL
+    echo "postgres://${name}:${pass}@127.0.0.1:5432/${name}"
+    ;;
+  *)
+    usage
+    ;;
+esac
