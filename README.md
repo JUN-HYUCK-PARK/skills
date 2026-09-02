@@ -88,14 +88,14 @@ docs/unified-local-infra.md 설계
 
 ## 프로젝트에 적용하기
 
-1. `devinfra init <프로젝트 루트>` — 최소 `.agents/runtime-profile.yml`을
+1. `de-novo-skills init <프로젝트 루트>` — 최소 `.agents/runtime-profile.yml`을
    심는다 (`overlay: none`). `--slug` `--engines` `--services`로 값을 넣는다.
-2. `devinfra validate <프로젝트 루트>` — docker 없이 불변식을 센다.
-3. `devinfra setup <프로젝트 루트>` — yml을 읽어 필요한 엔진만 기동하고
+2. `de-novo-skills validate <프로젝트 루트>` — docker 없이 불변식을 센다.
+3. `de-novo-skills setup <프로젝트 루트>` — yml을 읽어 필요한 엔진만 기동하고
    database를 프로비저닝한다. 멱등이라 몇 번을 돌려도 안전하다.
 
 CLI 설치는 이 체크아웃에서 한 번: `npm install && npm link`. 그 뒤에는
-어디서든 `devinfra init | validate | setup | up | status | provision` 을 쓴다 (링크 없이
+어디서든 `de-novo-skills init | validate | setup | up | status | provision` 을 쓴다 (링크 없이
 `node infra/bin/cli.mjs …` 로도 동작한다). 내리는 명령은 일부러 없다 —
 여러 프로젝트가 살고 있는 인프라의 중지는 사람이 직접 결정한다.
 4. 스킬을 전역 스킬 디렉토리(`~/.claude/skills/` 등)에 두거나, 쓰는 에이전트

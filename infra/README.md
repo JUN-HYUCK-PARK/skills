@@ -27,13 +27,13 @@ MySQL·Redis·PG를 새로 띄우지 않는다.
 
 ## 시작
 
-CLI(체크아웃에서 `npm install && npm link` 후 `devinfra`)가 정면이고,
+CLI(체크아웃에서 `npm install && npm link` 후 `de-novo-skills`)가 정면이고,
 compose가 바닥이다:
 
 ```bash
-devinfra up              # 기본 3종 (mysql pg redis)
-devinfra up kafka        # 선택 엔진 추가
-devinfra status          # 엔진별 상태와 준비 수
+de-novo-skills up              # 기본 3종 (mysql pg redis)
+de-novo-skills up kafka        # 선택 엔진 추가
+de-novo-skills status          # 엔진별 상태와 준비 수
 # 같은 일: docker compose -f infra/docker-compose.yml [--profile kafka] up -d --wait
 ```
 
@@ -73,10 +73,10 @@ docker compose -f infra/docker-compose.yml ps   # 전부 healthy 인지 센다
 (`data.engines`)이 정본이다. 셋팅은 그 yml을 읽어서 한다:
 
 ```bash
-devinfra setup <프로젝트 루트>   # 선언된 엔진 기동 + DB 프로비저닝, 멱등
+de-novo-skills setup <프로젝트 루트>   # 선언된 엔진 기동 + DB 프로비저닝, 멱등
 ```
 
-`devinfra provision (mysql|pg) <이름>` 은 setup이 쓰는 저수준 도구다 —
+`de-novo-skills provision (mysql|pg) <이름>` 은 setup이 쓰는 저수준 도구다 —
 프로파일 없이 급히 DB 하나 만들 때만 직접 쓴다.
 
 database·계정 이름은 프로젝트 slug, 한 프로젝트가 여러 개면 `<slug>_<용도>`.

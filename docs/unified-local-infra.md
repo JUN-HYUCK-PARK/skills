@@ -16,7 +16,7 @@
 
 한 머신에서 여러 프로젝트와 여러 AI 에이전트가 동시에 개발하면 두 가지가 깨진다. 첫째, 프로젝트·에이전트마다 스택을 띄워 3000·8080을 쟁탈하고 CORS·OAuth 리다이렉트가 무너지며 "지금 API가 어느 포트인지"에 답이 없어진다. 둘째, 에이전트가 각자 자기 변경을 열어 보고 싶은데 풀스택을 복제하면 포트가 터지고, 한 스택을 공유하면 서로의 배포를 덮어쓴다.
 
-dev-infra는 이미 머신 공유 엔진 층(MySQL·PG·Redis·Kafka·Mongo·Mail·MinIO)을 갖고 있다. 이 설계는 그 위에 **프로젝트 무관한 주소 층(와일드카드 TLD + 선택적 루프백 프록시)** 과 **오버레이 라우팅 제어면(레지스트리 + 호스트네임 폴스루)** 을 같은 CLI(`devinfra`)에 얹어, 개발자·에이전트에게 **이름 붙은 URL과 그 URL이 가리키는 스택**을 준다. 앱 compose/k8s 매니페스트, 이미지 빌드, 확인 도구(curl·브라우저·테스트 러너)는 소비 프로젝트가 계속 소유한다. 머신 프록시 리스너는 옵트인이다 (`addressing.proxy: machine`). 생략 기본값은 `none` — URL만 인쇄하고 `:80`을 건드리지 않는다.
+dev-infra는 이미 머신 공유 엔진 층(MySQL·PG·Redis·Kafka·Mongo·Mail·MinIO)을 갖고 있다. 이 설계는 그 위에 **프로젝트 무관한 주소 층(와일드카드 TLD + 선택적 루프백 프록시)** 과 **오버레이 라우팅 제어면(레지스트리 + 호스트네임 폴스루)** 을 같은 CLI(`de-novo-skills`)에 얹어, 개발자·에이전트에게 **이름 붙은 URL과 그 URL이 가리키는 스택**을 준다. 앱 compose/k8s 매니페스트, 이미지 빌드, 확인 도구(curl·브라우저·테스트 러너)는 소비 프로젝트가 계속 소유한다. 머신 프록시 리스너는 옵트인이다 (`addressing.proxy: machine`). 생략 기본값은 `none` — URL만 인쇄하고 `:80`을 건드리지 않는다.
 
 ---
 
@@ -24,7 +24,7 @@ dev-infra는 이미 머신 공유 엔진 층(MySQL·PG·Redis·Kafka·Mongo·Mai
 
 ### 현재 구현 (코드 기준)
 
-`devinfra`의 이빨은 **엔진 층만** 있다.
+`de-novo-skills`의 이빨은 **엔진 층만** 있다.
 
 - `infra/docker-compose.yml` — 엔진 한 벌, 전부 `127.0.0.1`에 표준 포트, 네트워크 이름 `dev-infra`. `restart: unless-stopped`.
 - `infra/bin/cli.mjs` — `setup | up | status | provision`. **`down`은 없다** (여러 프로젝트가 엔진 위에 산다).
@@ -32,7 +32,7 @@ dev-infra는 이미 머신 공유 엔진 층(MySQL·PG·Redis·Kafka·Mongo·Mai
 - 모르는 엔진은 거절한다 (`ENGINES` 표 + `ALIASES`). `data.infra !== "machine"` 이면 거절한다.
 - 성공 판정은 종료코드가 아니라 센 결과물이다 (`엔진 2/2`, `DB n/n`). `cmdUp` / `runSetup`이 이미 이 패턴이다.
 - `infra/bin/provision` — mysql/pg database + 전용 계정, 멱등.
-- `package.json` `bin.devinfra` → `infra/bin/cli.mjs`. 테스트는 `node --test infra/bin/`. 파일 락 헬퍼 의존성 없음.
+- `package.json` `bin.de-novo-skills` → `infra/bin/cli.mjs`. 테스트는 `node --test infra/bin/`. 파일 락 헬퍼 의존성 없음.
 
 스킬 `skills/grove/`은 네 기둥 운영 모델을 **제품 언어**로 적고 있다. 소프트웨어로 구현된 것은 기둥 1의 엔진 절반뿐이다.
 
@@ -45,7 +45,7 @@ dev-infra는 이미 머신 공유 엔진 층(MySQL·PG·Redis·Kafka·Mongo·Mai
 
 스킬 로드 경로도 비어 있다. 정본은 `skills/grove/`인데 Grok/Claude는 여기를 자동 로드하지 않는다. 확인된 로드 경로: `.agents/skills/`, `.claude/skills/`, `~/.agents/skills/`, `~/.claude/skills/`. `.grok/skills/` 와 `~/.grok/skills/` 는 이 대화의 전제이며 **이 체크아웃에서 검증되지 않았다** — 설치 명령은 디렉터리가 있을 때만 심고, 없으면 `--force` 없이 만들지 않는다.
 
-루트 README는 symlink 어댑터를 설명하지만 이 레포에는 어댑터도 `devinfra skill install`도 없다.
+루트 README는 symlink 어댑터를 설명하지만 이 레포에는 어댑터도 `de-novo-skills skill install`도 없다.
 
 검증된 선행 구현은 소비 프로젝트 쪽에 있다. `onedns-microservice`의 `tools/dev-overlay.mjs`는 k3d Gateway API로 `{app}--{env}.local.fulgo.co.kr` 폴스루를 이미 구현하고 (`buildHostRoutes`: 붙지 않은 env 호스트는 shared namespace), `--apply` plan-first이며, `.claude/skills/*`는 `.agents/skills/*`로의 **상대** symlink다. 같은 머신의 `configs/local-k8s/k3d.yaml`은 호스트 `80:80`과 `443:443`을 로드밸런서에 붙인다. `infra/registry.local.md`는 이 머신에 fulgo/onedns가 산다고 적는다. 이 설계는 그 패턴을 프로젝트 무관 층으로 일반화한다. onedns compose/k8s를 이 레포로 가져오지 않는다.
 
@@ -62,7 +62,7 @@ dev-infra는 이미 머신 공유 엔진 층(MySQL·PG·Redis·Kafka·Mongo·Mai
 
 ### Goals
 
-- 한 개발자 Mac에서 여러 프로젝트·여러 에이전트가 **포트를 고르지 않고** 이름으로 서비스를 가리킨다 (`devinfra urls`). 그 이름을 실제로 열 리스너는 옵트인이다.
+- 한 개발자 Mac에서 여러 프로젝트·여러 에이전트가 **포트를 고르지 않고** 이름으로 서비스를 가리킨다 (`de-novo-skills urls`). 그 이름을 실제로 열 리스너는 옵트인이다.
 - 오버레이가 켜진 프로젝트에서 N 에이전트가 **풀스택 N벌 없이** 자기 변경 URL을 갖는다. 붙이지 않은 `{service}--{env}`는 공유 baseline으로 폴스루한다.
 - 호스트 포트 증가를 피하려면 overlay 계약이 docker 네트워크 또는 클러스터 내부 업스트림을 쓰게 한다. 제네릭 compose 헬퍼는 1차가 아니다.
 - 프로젝트 무관한 것은 이 레포가 소유한다: 엔진, 머신 TLD, 루프백 프록시, 오버레이 **라우팅** 레지스트리, 프로파일 불변식 검증, writer 락, 스킬 로드 경로 어댑터.
@@ -70,7 +70,7 @@ dev-infra는 이미 머신 공유 엔진 층(MySQL·PG·Redis·Kafka·Mongo·Mai
 - YAML이 정본이고 CLI는 그린다. 새 엔진 = compose + `ENGINES` 표 + 프로파일 선언 + `setup` 재실행.
 - 성공은 센 결과물이다. 종료코드 0만으로 성공이라고 하지 않는다.
 - 사실당 집 하나. 같은 불변식을 스킬·스키마·infra README·CLI help에 반복하지 않는다.
-- 기존 `devinfra`를 확장한다. 두 번째 CLI를 만들지 않는다. `down`을 추가하지 않는다.
+- 기존 `de-novo-skills`를 확장한다. 두 번째 CLI를 만들지 않는다. `down`을 추가하지 않는다.
 
 ### Non-Goals
 
@@ -119,7 +119,7 @@ flowchart TB
     end
   end
 
-  DEV[개발자 / 에이전트] -->|이름으로 가리킨다| URLS[devinfra urls]
+  DEV[개발자 / 에이전트] -->|이름으로 가리킨다| URLS[de-novo-skills urls]
   URLS --> PROXY
   URLS --> K3D
   PROXY -->|api.acme.localhost| BASEA
@@ -136,8 +136,8 @@ flowchart TB
 | 사다리 | 켜지는 조건 | 이 레포가 주는 것 |
 | --- | --- | --- |
 | L0 엔진 | `data.infra: machine` + `data.engines` | 오늘 `setup/up/status/provision` |
-| L1 주소 | `addressing` + `services` | 이름 난 URL (`devinfra urls`). 리스너 없음 |
-| L1 리스너 | `addressing.proxy: machine` **명시** + `devinfra proxy up` | Caddy 라우트. 생략/`none`은 리스너를 안 띄움 |
+| L1 주소 | `addressing` + `services` | 이름 난 URL (`de-novo-skills urls`). 리스너 없음 |
+| L1 리스너 | `addressing.proxy: machine` **명시** + `de-novo-skills proxy up` | Caddy 라우트. 생략/`none`은 리스너를 안 띄움 |
 | L2 오버레이 | `overlay.attachable` **그리고** `runtime.commands.overlay` | env 레지스트리, 폴스루 표, 프로젝트 명령 dispatch. Caddy 갱신은 `proxy: machine`일 때만 |
 | L3 k3d | 프로젝트 `backend: k3d` (선택) | 이 레포는 위임. `addressing.proxy: project`. 클러스터·매니페스트는 프로젝트 |
 
@@ -156,7 +156,7 @@ flowchart LR
     R[오버레이 라우팅 레지스트리]
     W[writer 락 파일]
     S[스킬 정본 + symlink 설치]
-    C["devinfra CLI"]
+    C["de-novo-skills CLI"]
   end
 
   subgraph proj["소비 프로젝트 소유"]
@@ -211,7 +211,7 @@ flowchart LR
 ```
 dev-infra/
   README.md                          # 사람 온보딩
-  package.json                       # bin: devinfra
+  package.json                       # bin: de-novo-skills
   infra/
     docker-compose.yml               # 엔진 + proxy 프로필 (호스트 포트는 env)
     README.md                        # 엔진 + 프록시(머신 공유 프로세스)
@@ -320,7 +320,7 @@ overlay : {service}--{env}.{project}.{tld}    # env가 살아 있고 붙었으�
 
 1차 구현은 `localhost`만 자동 셋업한다. 다른 TLD는 사용자가 DNS를 맞춘 뒤 `config.yml`/`addressing.tld`에 적는다.
 
-`devinfra doctor`의 DNS 검사: `dns.lookup(host, { family: 4 })`가 `127.0.0.1`인지 센다 (`주소 DNS 1/1`). AAAA를 쓰지 않는다.
+`de-novo-skills doctor`의 DNS 검사: `dns.lookup(host, { family: 4 })`가 `127.0.0.1`인지 센다 (`주소 DNS 1/1`). AAAA를 쓰지 않는다.
 
 **IPv6와 프로브 (v1에서 닫음).** macOS stub resolver는 `*.localhost`에 AAAA(`::1`)를 준다. 프록시는 호스트 `127.0.0.1:{http_port}`만 publish한다. **CLI 프로브는 호스트네임으로 connect 하지 않는다.** TCP 대상은 `addressing.proxy`로 고른다: `machine`이면 `127.0.0.1:{config.http_port}`, `project`이면 `127.0.0.1:80`(리스너가 있을 때만), `none`/`portless`는 프로브 없음. 헤더는 항상 `Host: {hostname}`. 브라우저 Happy Eyeballs가 `::1`로 실패할 수 있음은 doctor가 경고만 한다. 듀얼 스택 publish는 후속 측정이지 v1 성공 판정을 막지 않는다.
 
@@ -328,7 +328,7 @@ overlay : {service}--{env}.{project}.{tld}    # env가 살아 있고 붙었으�
 
 호스트 `:80`과 `:443`은 **머신 전역**이다. 프로파일 `addressing.proxy: project`는 그 프로젝트의 라우트를 Caddyfile에서 빼는 것이지, Caddy의 호스트 bind를 풀어 주지 않는다. k3d(`onedns` `k3d.yaml` `80:80`/`443:443`)와 Caddy는 **공존할 수 없다**. 퍼-프로젝트 skip은 공존 모드가 아니다.
 
-점유 판정 `whoOwns(127.0.0.1, port)` — `devinfra up`과 같이 **멱등**이다:
+점유 판정 `whoOwns(127.0.0.1, port)` — `de-novo-skills up`과 같이 **멱등**이다:
 
 | 결과 | 조건 | `proxy up` |
 | --- | --- | --- |
@@ -336,9 +336,9 @@ overlay : {service}--{env}.{project}.{tld}    # env가 살아 있고 붙었으�
 | `free` | connect 실패 (아무도 안 듣는다) | 계속 |
 | `other` | 포트는 열려 있으나 매핑이 `dev-proxy`가 아니다 | **비0**. `lsof`/`docker ps`와 처방: k3d면 로드밸런서를 `127.0.0.1:9080:80`으로 옮기거나 Caddy가 `http_port: 8080`로 양보 |
 
-이 머신의 onedns는 **명시적 소비 프로젝트 이관 단계**다. `proxy: machine` 프로젝트를 이 Mac에서 쓰려면 그 전에 k3d가 80/443을 내놓거나 Caddy가 8080을 쓴다. `other`일 때만 실패한다 — 이미 Caddy가 잡고 있는 포트에 에이전트가 `proxy up`을 다시 치는 것은 `devinfra up`과 같은 성공이다.
+이 머신의 onedns는 **명시적 소비 프로젝트 이관 단계**다. `proxy: machine` 프로젝트를 이 Mac에서 쓰려면 그 전에 k3d가 80/443을 내놓거나 Caddy가 8080을 쓴다. `other`일 때만 실패한다 — 이미 Caddy가 잡고 있는 포트에 에이전트가 `proxy up`을 다시 치는 것은 `de-novo-skills up`과 같은 성공이다.
 
-`devinfra proxy up` 절차 (`devinfra up`과 같은 멱등 `compose up -d --wait`):
+`de-novo-skills proxy up` 절차 (`de-novo-skills up`과 같은 멱등 `compose up -d --wait`):
 
 1. `whoOwns`가 `other`이면 즉시 실패 (위 표). `self`/`free`는 계속.
 2. `writeCaddyfile(config, projects[], overlays[])` — **유일한 Caddyfile writer**. 경로가 디렉터리면 거절 (Docker가 디렉터리를 `/etc/caddy/Caddyfile`에 마운트하는 고전적 실패). `proxy: machine` 라우트가 0개면 이 함수가 스텁 내용을 쓴다. `proxy up`은 스텁을 따로 쓰지 않는다.
@@ -516,7 +516,7 @@ addressing:
 
 **생략 = `none`.** 스키마에 `addressing`+`services`가 이미 있어도 리스너를 켜지 않는다. 이 머신의 k3d 예시가 setup만으로 `:80`을 빼앗지 않게 하기 위함이다.
 
-`devinfra urls`는 `proxy` 값과 무관하게 스킴대로 이름을 인쇄한다.
+`de-novo-skills urls`는 `proxy` 값과 무관하게 스킴대로 이름을 인쇄한다.
 
 ---
 
@@ -567,7 +567,7 @@ stateDiagram-v2
 
 #### 프로젝트 명령 계약
 
-정본: `references/overlay-contract.md`. 스킬은 동사 목록만 남기고, 에이전트는 **`devinfra overlay`만** 호출한다 (프로젝트 명령을 직접 치지 않음 — PR 5에서 스킬 세 줄을 같이 고친다).
+정본: `references/overlay-contract.md`. 스킬은 동사 목록만 남기고, 에이전트는 **`de-novo-skills overlay`만** 호출한다 (프로젝트 명령을 직접 치지 않음 — PR 5에서 스킬 세 줄을 같이 고친다).
 
 호출:
 
@@ -581,7 +581,7 @@ argv    = [...runtime.commands.overlay.split, verb, ...cliArgs]
 
 **plan-first. stderr를 파싱해 재시도하지 않는다.**
 
-| `overlay.plan_first` | `devinfra overlay …` (플래그 없음) | `… --apply` |
+| `overlay.plan_first` | `de-novo-skills overlay …` (플래그 없음) | `… --apply` |
 | --- | --- | --- |
 | 생략 또는 `true` (기본) | 프로젝트 명령을 `--apply` 없이 호출. 레지스트리·Caddy **불변**. 명령은 계획만 인쇄해야 한다 (onedns `printPlan`과 같음) | `--apply`를 붙여 호출. `ok:true` 뒤에만 레지스트리·Caddy 갱신 |
 | `false` | 프로젝트 명령을 **호출하지 않는다**. 메시지: `이 overlay 명령은 plan-first가 아니다. --apply가 필요하다.` | `--apply` 없이 프로젝트 명령을 한 번 호출 (명령이 `--apply`를 모를 수 있음). 성공 JSON 뒤에 레지스트리 갱신 |
@@ -637,9 +637,9 @@ onedns `dev-overlay.mjs`는 오늘 이 JSON을 내지 않는다. "한 줄만 추
 에이전트 절차 (스킬이 말하고 CLI가 강제):
 
 1. 프로파일을 읽어 overlay가 활성인지 본다. 아니면 멈춘다.
-2. 이미지를 프로젝트 방식으로 빌드해 full SHA로 태그한다. `devinfra`는 빌드하지 않는다.
-3. `devinfra overlay create <env>` (이미 있으면 멱등 no-op).
-4. `devinfra overlay attach <env> <service> --image <ref> --apply`.
+2. 이미지를 프로젝트 방식으로 빌드해 full SHA로 태그한다. `de-novo-skills`는 빌드하지 않는다.
+3. `de-novo-skills overlay create <env>` (이미 있으면 멱등 no-op).
+4. `de-novo-skills overlay attach <env> <service> --image <ref> --apply`.
 5. 인쇄된 overlay URL로 확인한다 (도구는 프로젝트 몫).
 6. 즉시 detach, 작업 끝나면 destroy.
 
@@ -694,9 +694,9 @@ acquired_at: 2026-09-02T10:00:00+09:00
 명령:
 
 ```
-devinfra writer [프로젝트루트]           # status. 기본
-devinfra writer acquire [프로젝트루트]
-devinfra writer release [프로젝트루트]
+de-novo-skills writer [프로젝트루트]           # status. 기본
+de-novo-skills writer acquire [프로젝트루트]
+de-novo-skills writer release [프로젝트루트]
 ```
 
 규칙:
@@ -707,7 +707,7 @@ devinfra writer release [프로젝트루트]
 - `release`: 자기 pid이거나 `--force` (사람만. 에이전트 스킬은 force를 쓰지 않음).
 - 원자성: `infra/lib/lockfile.mjs`. POSIX에서 임시 파일에 쓰고 `rename(2)` (같은 파일시스템에서 원자). Node `flock`/`lockf` 바인딩과 `flock(1)`에 의존하지 않는다 — 이 레포 Node는 버전 핀이 없고 macOS에 `flock(1)`이 없다. 새 npm 의존성을 넣지 않는다. 한 사용자 Mac의 TOCTOU 창은 수락.
 - overlay 레지스트리 갱신도 같은 rename 헬퍼를 쓴다.
-- 보호 대상(문서·스킬): 프로젝트 baseline을 바꾸는 일. `devinfra setup`(엔진)과 overlay attach는 **락 밖**.
+- 보호 대상(문서·스킬): 프로젝트 baseline을 바꾸는 일. `de-novo-skills setup`(엔진)과 overlay attach는 **락 밖**.
 - 1차는 `writer`를 status/doctor에 보여 주고 스킬이 절차를 말한다. **강제 `up` 차단은 2차.**
 
 orca-cli 핸드오프는 이 파일을 읽고 `release`/`acquire`를 호출하면 된다. 그 프로토콜은 여기 범위가 아니다.
@@ -775,7 +775,7 @@ orca-cli 핸드오프는 이 파일을 읽고 `release`/`acquire`를 호출하�
 
 테스트 파일: `infra/bin/profile.test.mjs` (기존 `node --test infra/bin/`에 포함).
 
-#### `devinfra validate [루트]`
+#### `de-novo-skills validate [루트]`
 
 docker 없이 프로파일만. 결과물:
 
@@ -788,7 +788,7 @@ docker 없이 프로파일만. 결과물:
 
 실패 항목만 비0. setup은 엔진 경로 앞에서 invariants를 같은 함수로 돌린다.
 
-#### `devinfra register [루트]`
+#### `de-novo-skills register [루트]`
 
 `data.infra`와 무관하게 인덱스를 upsert한다. `infra: project` 레거시도 주소를 등록할 수 있다 — setup이 거절해도 라우팅 인덱스는 별개다.
 
@@ -800,28 +800,28 @@ docker 없이 프로파일만. 결과물:
 
 ---
 
-### CLI 표면 — `devinfra` 확장
+### CLI 표면 — `de-novo-skills` 확장
 
 한 바이너리. `printHelp`에 명령을 추가하고 불변식 설명은 넣지 않는다. **1차 표면은 이 목록이 닫힌다.** `proxy hosts`는 없다. `--https`는 `proxy up`에만 있다.
 
 ```
-devinfra setup [루트]                 # 기존 엔진 + register + (떠 있는 Caddy면) writeCaddyfile
-devinfra up [엔진…]                   # 기존. proxy 안 넣음
-devinfra status                       # 기존 엔진 + proxy 한 줄 (떠 있으면)
-devinfra provision …                  # 기존
+de-novo-skills setup [루트]                 # 기존 엔진 + register + (떠 있는 Caddy면) writeCaddyfile
+de-novo-skills up [엔진…]                   # 기존. proxy 안 넣음
+de-novo-skills status                       # 기존 엔진 + proxy 한 줄 (떠 있으면)
+de-novo-skills provision …                  # 기존
 
-devinfra validate [루트]
-devinfra register [루트]              # 인덱스 upsert. infra: project 허용
-devinfra urls [루트]                  # 이름 표. --probe 는 v4+Host
-devinfra doctor [루트]
+de-novo-skills validate [루트]
+de-novo-skills register [루트]              # 인덱스 upsert. infra: project 허용
+de-novo-skills urls [루트]                  # 이름 표. --probe 는 v4+Host
+de-novo-skills doctor [루트]
 
-devinfra proxy up [--https]
-devinfra proxy status
-devinfra proxy reload
+de-novo-skills proxy up [--https]
+de-novo-skills proxy status
+de-novo-skills proxy reload
 
-devinfra overlay create|attach|detach|destroy|status
-devinfra writer [status|acquire|release]
-devinfra skill install|status
+de-novo-skills overlay create|attach|detach|destroy|status
+de-novo-skills writer [status|acquire|release]
+de-novo-skills skill install|status
 ```
 
 `proxy up --https`: `config.yml` `https: internal`로 쓰고 override에 443을 넣는다. 호스트 trust store (`caddy trust`)는 컨테이너 안에서 호스트 키체인을 고치지 못한다 — 명령이 안내만 하고, 사람이 mkcert/키체인을 처리한다. 기본은 HTTP.
@@ -856,9 +856,9 @@ devinfra skill install|status
 정본: `skills/grove/` (이 레포). 본문을 도구별 디렉터리에 복사하지 않는다.
 
 ```
-devinfra skill install                 # 전역: 존재하는 홈 로드 경로에 symlink
-devinfra skill install --project <루트>
-devinfra skill status
+de-novo-skills skill install                 # 전역: 존재하는 홈 로드 경로에 symlink
+de-novo-skills skill install --project <루트>
+de-novo-skills skill status
 ```
 
 전역 타깃 — **디렉터리가 이미 있을 때만** (또는 `--force`):
@@ -881,9 +881,9 @@ devinfra skill status
 
 스킬 본문 (PR 5에서 세 줄 — doctor PR로 미루지 않음):
 
-1. baseline을 바꾸기 전에 `devinfra writer`로 소유자를 본다.
-2. 주소는 `devinfra urls` — 포트를 고르지 않는다.
-3. overlay 동사는 `runtime.commands.overlay`가 있을 때만 **`devinfra overlay …`**. 프로젝트 명령을 직접 발명·호출하지 않는다.
+1. baseline을 바꾸기 전에 `de-novo-skills writer`로 소유자를 본다.
+2. 주소는 `de-novo-skills urls` — 포트를 고르지 않는다.
+3. overlay 동사는 `runtime.commands.overlay`가 있을 때만 **`de-novo-skills overlay …`**. 프로젝트 명령을 직접 발명·호출하지 않는다.
 
 스키마 키를 스킬에 재진술하지 않는다.
 
@@ -1038,7 +1038,7 @@ Open Questions Q1. 1차는 `localhost`. `lvh.me`/nip.io는 제3자 DNS에 루프
 | 프록시/엔진이 LAN에 열림 | 높음 | compose **호스트** `127.0.0.1:…`만. 테스트는 override `ports:`와 `docker port`에 `0.0.0.0` 없음. Caddyfile `bind`로 막지 않음 (막으면 트래픽이 안 들어옴) |
 | 프로젝트 A 호스트가 프로젝트 B 업스트림으로 감 | 높음 | `writeCaddyfile`이 선언 서비스만, 호스트 충돌 실패. 잡 올 없음. `{project}` = `project.host` |
 | overlay 호스트가 다른 env 트래픽을 받음 | 중간 | 호스트네임이 env를 고른다. 이 레포 프록시는 `X-Dev-Env`를 주입하지 않음 |
-| `docker compose down -v` | 높음 | `devinfra down` 없음. infra README 경고 |
+| `docker compose down -v` | 높음 | `de-novo-skills down` 없음. infra README 경고 |
 | 락 파일을 우회하고 baseline을 내림 | 낮음 | **advisory**. 보안 경계가 아니라 협업 신호 |
 | Caddy admin API 노출 | 중간 | `admin localhost:2019` (컨테이너 내부). 호스트 publish 없음 |
 | 생성된 Caddyfile에 실비밀 | 낮음 | 업스트림은 host:port뿐 |
@@ -1087,8 +1087,8 @@ HTTPS 내부 CA는 호스트 trust가 필요하다. `--https`는 안내 후 사�
 
 1. **PR 순서대로 머지.** 각 PR은 테스트 통과·독립 리뷰 가능. 아래 PR Plan.
 2. **엔진 사용자 (오늘).** 동작 불변. validate가 writers·forbid 생략을 불변식 참으로 본다.
-3. **L1 URL 옵트인.** `addressing`+`services` → `devinfra urls`. CORS는 프로젝트 작업.
-4. **L1 리스너 옵트인.** 명시 `addressing.proxy: machine` + 이 머신 `:80`이 비어 있음(또는 `http_port` 양보) + `devinfra proxy up`.
+3. **L1 URL 옵트인.** `addressing`+`services` → `de-novo-skills urls`. CORS는 프로젝트 작업.
+4. **L1 리스너 옵트인.** 명시 `addressing.proxy: machine` + 이 머신 `:80`이 비어 있음(또는 `http_port` 양보) + `de-novo-skills proxy up`.
 5. **L2 옵트인.** `overlay.attachable` + 프로젝트 overlay 명령이 JSON 계약. 스텁으로 이 레포가 먼저 검증. onedns는 `proxy: project` + JSON `ok` 이관이 **별도 소비 PR**.
 6. **onedns `:80` 이관은 명시 단계.** 이 Mac에서 Caddy를 80에 올리려면 `k3d.yaml`의 `80:80`/`443:443`을 옮기거나 Caddy가 `http_port: 8080`을 쓴다. `addressing.proxy: project`만으로는 부족하다.
 7. **롤백.** Caddy만 내리려면 `docker compose -f infra/docker-compose.yml --profile proxy stop proxy` (문서화만, CLI `down` 없음).
@@ -1110,7 +1110,7 @@ HTTPS 내부 CA는 호스트 trust가 필요하다. `--https`는 안내 후 사�
 10. **`writeCaddyfile`이 Caddyfile의 유일한 writer다.** 전 프로젝트 라이브 프로파일 병합, 호스트 충돌 실패, machine 라우트 0개면 스텁 내용. `proxy up`에 두 번째 스텁 writer를 두지 않는다. 컨테이너 Caddy `http_port`는 80 고정, 호스트 매핑만 override.
 17. **`renderUrl`/프로브의 `config.http_port`는 `addressing.proxy === "machine"`에만 쓴다.** `project`/`none`/`portless`는 스킴 호스트만 인쇄한다. `project` 프로브는 호스트 `:80` (있을 때만). Caddy가 8080으로 양보해도 k3d URL에 `:8080`을 붙이지 않는다.
 11. **스킬은 symlink만 설치한다.** 프로젝트 `.agents` 절대 링크는 머신 로컬·gitignore. 도구 어댑터는 상대. `~/.grok/skills`는 미검증이라 있을 때만.
-12. **`devinfra down`은 계속 없다.**
+12. **`de-novo-skills down`은 계속 없다.**
 13. **성공은 분수다.** 프로브는 `127.0.0.1`+`Host`. JSON `ok: false`는 실패.
 14. **사실당 집 하나.**
 15. **확인 도구는 계속 프로젝트 몫이다.**
@@ -1160,7 +1160,7 @@ HTTPS 내부 CA는 호스트 trust가 필요하다. `--https`는 안내 후 사�
 - **남은 측정 (후속):** OrbStack/Docker Desktop에서 `::1:{http_port}` publish가 되는지. 브라우저 경고는 doctor가 유지.
 - **입력 필요:** 없음. 듀얼 스택은 1차 PR이 아님.
 
-### Q7. `devinfra setup`이 proxy를 같이 띄울 것인가
+### Q7. `de-novo-skills setup`이 proxy를 같이 띄울 것인가
 
 - **옵션:** (a) 띄우지 않고 안내 (채택) (b) `proxy: machine`이면 같이 up (c) 별도 `ensure`
 - **권장:** (a). 엔진 수명과 :80 소유를 섞지 않는다.
@@ -1206,14 +1206,14 @@ HTTPS 내부 CA는 호스트 trust가 필요하다. `--https`는 안내 후 사�
 
 ### PR 1 — 프로파일 검증을 엔진 너머로
 
-- **제목:** `devinfra validate`: runtime-profile 불변식과 예시 YAML 기계 검증
+- **제목:** `de-novo-skills validate`: runtime-profile 불변식과 예시 YAML 기계 검증
 - **영향 파일:** `infra/lib/profile.mjs` (신규), `infra/bin/setup.mjs` (`readProfile`이 parseProfile 사용), `infra/bin/cli.mjs` (`validate` 명령), `infra/bin/profile.test.mjs` (신규), `infra/bin/setup.test.mjs` (회귀), `skills/grove/examples/*.yml` (통과 픽스처; 멀티서비스에 `addressing.proxy: project` 추가)
 - **의존:** 없음
-- **내용:** 최상위 화이트리스트 `version | project | addressing | runtime | services | overlay | data` (`qa` 거절). `single_stack`/`writers`/`forbid_direct_db_writes` 생략=true. overlay 생략=L2 off. `commands.overlay` + overlay 생략/`none` 거절. `project.host` DNS 규칙. `addressing.proxy` 생략=`none`. `devinfra validate [루트]`. 기존 setup 테스트 불변.
+- **내용:** 최상위 화이트리스트 `version | project | addressing | runtime | services | overlay | data` (`qa` 거절). `single_stack`/`writers`/`forbid_direct_db_writes` 생략=true. overlay 생략=L2 off. `commands.overlay` + overlay 생략/`none` 거절. `project.host` DNS 규칙. `addressing.proxy` 생략=`none`. `de-novo-skills validate [루트]`. 기존 setup 테스트 불변.
 
 ### PR 2 — 이름 난 URL 렌더링
 
-- **제목:** `devinfra urls`: addressing.scheme으로 호스트네임을 그린다
+- **제목:** `de-novo-skills urls`: addressing.scheme으로 호스트네임을 그린다
 - **영향 파일:** `infra/lib/addressing.mjs` (신규), `infra/bin/cli.mjs`, `infra/bin/addressing.test.mjs` (신규), `skills/grove/references/runtime-profile.md` (`addressing.proxy` 생략=none, `project.host`)
 - **의존:** PR 1
 - **내용:** 스킴 치환, `{project}`=`project.host`. `renderUrl`은 `addressing.proxy === "machine"`이고 호스트 포트가 80/443이 아닐 때만 `:port`. `project`/`none`/`portless`는 스킴 호스트만. `--probe`는 machine이면 `127.0.0.1:{http_port}`+`Host`, 그 외는 포트 없이 인쇄(프로브 생략 또는 아래 PR 5). 리스너 없음. `proxy: none`이 기본.
@@ -1227,28 +1227,28 @@ HTTPS 내부 CA는 호스트 trust가 필요하다. `--https`는 안내 후 사�
 
 ### PR 4 — writer 락
 
-- **제목:** `devinfra writer`: 프로젝트당 baseline 쓰기 소유자 하나 (advisory)
+- **제목:** `de-novo-skills writer`: 프로젝트당 baseline 쓰기 소유자 하나 (advisory)
 - **영향 파일:** `infra/lib/writer.mjs`, `infra/bin/cli.mjs`, `infra/bin/writer.test.mjs` (`lockfile.mjs`는 PR 3)
 - **의존:** PR 1, PR 3 (`state.mjs`, `lockfile.mjs`)
 - **내용:** `~/.dev-infra/locks/{slug}.lock`, acquire/release/status, 죽은 pid 탈취, rename+pid. `agent`/`worktree` 소스 고정. 엔진 setup은 락을 요구하지 않음. `commands.up` 미차단. 스킬 세 줄은 PR 5.
 
 ### PR 5 — 오버레이 라우팅 제어면
 
-- **제목:** `devinfra overlay`: 레지스트리·폴스루·dispatch (`proxy` 모드별 성공)
-- **영향 파일:** `infra/lib/overlay.mjs`, `infra/lib/proxy.mjs` (fallthrough 병합은 기존 writer), `infra/bin/cli.mjs`, `infra/bin/overlay-stub.mjs` (신규 픽스처), `infra/bin/overlay.test.mjs`, `skills/grove/references/overlay-contract.md` (신규), `skills/grove/SKILL.md` (**세 줄**: writer, urls, `devinfra overlay`만 — 프로젝트 명령 직접 호출 금지)
+- **제목:** `de-novo-skills overlay`: 레지스트리·폴스루·dispatch (`proxy` 모드별 성공)
+- **영향 파일:** `infra/lib/overlay.mjs`, `infra/lib/proxy.mjs` (fallthrough 병합은 기존 writer), `infra/bin/cli.mjs`, `infra/bin/overlay-stub.mjs` (신규 픽스처), `infra/bin/overlay.test.mjs`, `skills/grove/references/overlay-contract.md` (신규), `skills/grove/SKILL.md` (**세 줄**: writer, urls, `de-novo-skills overlay`만 — 프로젝트 명령 직접 호출 금지)
 - **의존:** PR 3, PR 1
 - **내용:** 능력 게이트 (생략/`none`/명령 없음/명령만 있음). env DNS `{0,61}`. full SHA. JSON `ok:true` 필수, `ok:false` 실패. `upstream`은 `proxy: machine` attach만 필수. `project`/`none`/`portless`는 Caddy 생략. 프로브: machine은 `127.0.0.1:{config.http_port}`+Host, project는 호스트 `:80`이 있을 때만(Caddy 포트 아님), none/portless는 생략. plan-first, stderr 휴리스틱 없음, `plan_first: false`면 `--apply` 없이 미호출. 동사 뒤 플래그 통과. cwd=프로젝트 루트, timeout 120s. `docker:` 업스트림은 `dev-infra` external 조인 계약. 스텁으로 레지스트리·폴스루 테스트. 워크로드 기동 코드 없음.
 
 ### PR 6 — 스킬 로드 경로 symlink
 
-- **제목:** `devinfra skill install`: 정본을 에이전트 로드 경로에 복사하지 않고 심는다
+- **제목:** `de-novo-skills skill install`: 정본을 에이전트 로드 경로에 복사하지 않고 심는다
 - **영향 파일:** `infra/lib/skill-install.mjs`, `infra/bin/cli.mjs`, `infra/bin/skill-install.test.mjs`, 루트 `README.md` (온보딩 + **커밋하지 마라**)
 - **의존:** 없음 (병렬 가능). CLI help 충돌을 피하려면 다른 CLI PR 이후
 - **내용:** 홈 절대 symlink. 프로젝트 `.agents` 절대+gitignore. `.claude`/`.grok` 상대. `.grok` 없으면 생성하지 않음. 실파일 본문 거절. `skill status` realpath. 스킬 본문은 PR 5가 이미 세 줄을 넣었으면 이 PR에서 다시 안 고침.
 
 ### PR 7 — doctor와 문서 정렬
 
-- **제목:** `devinfra doctor` 및 사실의 집 정리
+- **제목:** `de-novo-skills doctor` 및 사실의 집 정리
 - **영향 파일:** `infra/bin/cli.mjs` (`doctor`, `status` 루트 요약), `infra/lib/doctor.mjs`, `infra/bin/doctor.test.mjs`, `references/runtime-profile.md` (`validate` 한 줄), 루트 `README.md`, `infra/README.md` (`registry.local.md` 사람 메모, 도구 인덱스 `~/.dev-infra/projects/`, :80 불변식)
 - **의존:** PR 3, 4, 5, 6
 - **내용:** doctor가 엔진·`docker port`의 `0.0.0.0` 금지·:80 **other** 점유(self=`dev-proxy`는 정상)·DNS family4·v4+Host 주소(`machine`만 Caddy 포트, `project`는 :80)·writer advisory·overlay 능력·스킬 로드경로·포트 블록 겹침·Caddyfile-이-파일인지·인덱스 stale을 센다. 스킬 본문은 PR 5에서 이미 절차가 있으면 중복하지 않음. `qa:`/브라우저 문구가 되살아나지 않았는지 확인.

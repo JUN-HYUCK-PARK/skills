@@ -29,7 +29,7 @@ export function resolveProfilePath(arg, cwd = process.cwd()) {
   throw new Error(
     `runtime profile not found: ${nested}\n` +
       `프로젝트 루트에 ${PROFILE_RELPATH} 가 없다 — ` +
-      `devinfra init ${arg ?? '.'} 으로 최소 프로파일을 심는다.`
+      `de-novo-skills init ${arg ?? '.'} 으로 최소 프로파일을 심는다.`
   );
 }
 
@@ -91,7 +91,7 @@ export function containerState(container) {
   return { ready, label: health || (running === 'true' ? 'running' : 'stopped') };
 }
 
-// CLI(devinfra)와 직접 실행이 공유하는 본체. 종료코드를 반환한다.
+// CLI(de-novo-skills)와 직접 실행이 공유하는 본체. 종료코드를 반환한다.
 export function runSetup(pathArg) {
   const profilePath = resolveProfilePath(pathArg);
   const profile = readProfile(readFileSync(profilePath, 'utf8'), profilePath);

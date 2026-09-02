@@ -1,7 +1,7 @@
 #!/usr/bin/env node
-// devinfra — 머신 공유 개발 인프라 CLI. yml(runtime-profile)이 정본이고 CLI는
-// 그것을 그린다. 내리는 명령은 일부러 없다: 머신 인프라 위에 여러 프로젝트가
-// 살고 있어서, 중지는 사람이 docker compose 로 직접 결정한다.
+// de-novo-skills — Grove CLI. yml(runtime-profile)이 정본이고 CLI는 그것을
+// 그린다. 내리는 명령은 일부러 없다: 머신 인프라 위에 여러 프로젝트가 살고
+// 있어서, 중지는 사람이 docker compose 로 직접 결정한다.
 import { spawnSync } from 'node:child_process';
 import { readFileSync, realpathSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -19,6 +19,7 @@ import {
   runSetup,
 } from './setup.mjs';
 
+const CLI = 'de-novo-skills';
 const DEFAULT_ENGINES = ['mysql', 'pg', 'redis'];
 
 // 엔진 이름 목록 → compose 서비스·프로필. 인자가 없으면 기본 3종.
@@ -76,7 +77,7 @@ function cmdStatus() {
     if (state.ready) ready += 1;
     const label =
       state.label === 'missing'
-        ? `안 떠 있음${spec.composeProfile ? ` (devinfra up ${name})` : ''}`
+        ? `안 떠 있음${spec.composeProfile ? ` (${CLI} up ${name})` : ''}`
         : `${state.label}${state.ready ? ' ✓' : ''}`;
     console.log(`  ${name.padEnd(6)} ${spec.service.padEnd(8)} ${label}`);
   }
@@ -90,18 +91,18 @@ function cmdProvision(args) {
 }
 
 function printHelp() {
-  console.log(`devinfra — 머신 공유 개발 인프라 CLI (yml이 정본, CLI는 그린다)
+  console.log(`${CLI} — Grove CLI (yml이 정본, CLI는 그린다)
 
 사용법:
-  devinfra init [프로젝트루트] [--slug NAME]
+  ${CLI} init [프로젝트루트] [--slug NAME]
                                  [--engines a,b] [--services a,b] [--force]
                                            최소 .agents/runtime-profile.yml (overlay: none)
-  devinfra setup [프로젝트루트|프로파일]   .agents/runtime-profile.yml 을 읽어
+  ${CLI} setup [프로젝트루트|프로파일]     .agents/runtime-profile.yml 을 읽어
                                            선언된 엔진 기동 + DB 프로비저닝 (멱등)
-  devinfra validate [프로젝트루트|프로파일] 프로파일 불변식 (docker 없이)
-  devinfra up [엔진 …]                     기본(${DEFAULT_ENGINES.join(' ')}) 또는 지정 엔진 기동
-  devinfra status                          엔진별 상태와 준비 수
-  devinfra provision (mysql|pg) <이름>     저수준: database + 전용 계정 하나
+  ${CLI} validate [프로젝트루트|프로파일]  프로파일 불변식 (docker 없이)
+  ${CLI} up [엔진 …]                       기본(${DEFAULT_ENGINES.join(' ')}) 또는 지정 엔진 기동
+  ${CLI} status                            엔진별 상태와 준비 수
+  ${CLI} provision (mysql|pg) <이름>       저수준: database + 전용 계정 하나
 
 내리는 명령은 없다 — 머신 인프라 위에 여러 프로젝트가 살고 있어 중지는
 사람이 docker compose 로 직접 결정한다.`);
@@ -133,7 +134,7 @@ function main() {
       printHelp();
       return 0;
     default:
-      console.error(`devinfra: 모르는 명령 "${command}"\n`);
+      console.error(`${CLI}: 모르는 명령 "${command}"\n`);
       printHelp();
       return 1;
   }
@@ -154,7 +155,7 @@ if (isMain()) {
   try {
     process.exit(main());
   } catch (error) {
-    console.error(`devinfra: ${error.message}`);
+    console.error(`${CLI}: ${error.message}`);
     process.exit(1);
   }
 }

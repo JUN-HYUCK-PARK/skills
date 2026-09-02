@@ -4,7 +4,7 @@
 그 패턴에 들어가는 이 프로젝트의 값을 말한다. **스킬 본문을 복사해 오지 마라** —
 여기에는 값·경로·명령만 둔다. 최상위 키는 `version` `project` `addressing`
 `runtime` `services` `overlay` `data` 만 — `qa` 같은 모르는 키는
-`devinfra validate` 가 거절한다.
+`de-novo-skills validate` 가 거절한다.
 
 ## 전체 스키마 (주석이 스펙이다)
 
@@ -141,7 +141,7 @@ k8s namespace까지 같은 이름으로 잇는다. 엔진별 선언은 이 기�
 
 ### data.engines — 선언이 곧 셋팅 입력이다
 
-`devinfra setup <프로젝트 루트>` 가 이 선언을 읽어 필요한 엔진만 기동하고
+`de-novo-skills setup <프로젝트 루트>` 가 이 선언을 읽어 필요한 엔진만 기동하고
 database를 멱등 프로비저닝한다. 값 형태:
 
 | 엔진                       | 값                                        | 셋팅이 하는 일               |

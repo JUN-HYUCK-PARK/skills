@@ -91,7 +91,7 @@ test('디렉터리 이름이 slug 가 되면 --slug 없이 된다', () => {
   assert.equal(profile.project.slug, 'sideapp');
 });
 
-test('devinfra init 후 validate 가 5/5 다', () => {
+test('de-novo-skills init 후 validate 가 5/5 다', () => {
   const root = tmpProject('init-cli');
   const init = spawnSync(
     process.execPath,

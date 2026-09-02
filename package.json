@@ -1,9 +1,9 @@
 {
-  "name": "dev-infra",
+  "name": "de-novo-skills",
   "private": true,
   "type": "module",
   "bin": {
-    "devinfra": "./infra/bin/cli.mjs"
+    "de-novo-skills": "./infra/bin/cli.mjs"
   },
   "scripts": {
     "test": "node --test infra/bin/"

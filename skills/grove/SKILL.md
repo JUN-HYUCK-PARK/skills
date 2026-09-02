@@ -27,7 +27,7 @@ de-novo 스킬. 한 머신에서 여러 프로젝트와 에이전트가 같이 �
 
 **이 문서는 패턴만 말한다.** 도메인·포트·서비스 목록·백엔드·실제 명령은
 프로젝트 루트의 `.agents/runtime-profile.yml`에 있다. 작업 전에 먼저 읽어라.
-프로파일이 없으면 `devinfra init <프로젝트 루트>`가 첫 작업이다. 스키마는
+프로파일이 없으면 `de-novo-skills init <프로젝트 루트>`가 첫 작업이다. 스키마는
 [runtime-profile.md](references/runtime-profile.md). 구현 세부는 프로파일이
 고른 백엔드의 몫이다 — 여기서 백엔드를 고르지 않는다.
 
@@ -94,12 +94,12 @@ n개 프로젝트를 한 머신에서 돌리면 스킴에 `{project}`를 넣어 
 ### 인프라 셋팅은 yml이 정본이다
 
 쓰는 엔진은 `data.engines` 선언이 전부다. 손으로 고르지 말고 그 선언을 읽는
-도구를 돌린다 (`data.infra: machine`이면 `devinfra setup <프로젝트 루트>`).
+도구를 돌린다 (`data.infra: machine`이면 `de-novo-skills setup <프로젝트 루트>`).
 선언된 엔진만 기동하고, 내부 단위를 멱등 프로비저닝하고, 수를 붙인 요약
 (엔진 n/n, DB n/n)을 출력한다. 새 엔진이 필요해지면 명령을 바꾸는 게 아니라
 **yml에 선언을 추가하고 다시 돌린다.**
 
-프로파일을 쓰거나 고친 뒤에는 `devinfra validate <프로젝트 루트>`로 불변식을
+프로파일을 쓰거나 고친 뒤에는 `de-novo-skills validate <프로젝트 루트>`로 불변식을
 센다. docker가 필요 없다.
 
 ### 상태 확인이 항상 먼저다
@@ -146,7 +146,7 @@ restart   재시작만 필요
 
 ## 새 프로젝트에 셋팅하기
 
-1. `devinfra init <프로젝트 루트>` 로 최소 프로파일을 심는다 (`overlay: none`).
+1. `de-novo-skills init <프로젝트 루트>` 로 최소 프로파일을 심는다 (`overlay: none`).
    `--slug` `--engines` `--services` 로 값을 넣을 수 있다. 그 다음 앱 목록(m)·
    백엔드 티어·주소 스킴·데이터 정책을 프로파일에서 고친다. 스키마는
    [runtime-profile.md](references/runtime-profile.md). 예시는
