@@ -1,12 +1,12 @@
-# 머신 공유 인프라 — 이 머신의 모든 프로젝트가 쓰는 엔진들.
-# 프로젝트는 여기 있는 엔진을 자기 compose에 다시 띄우지 않는다.
+# Machine-shared infra — engines every project on this machine uses.
+# Projects do not start these engines again in their own compose.
 #
-# 엔진은 머신에 하나뿐이므로 표준 포트를 그대로 쓴다. 분리는 포트가 아니라
-# 엔진 내부 단위(database·계정·프리픽스)로 한다 — infra/README.md 참조.
-# 전부 127.0.0.1에만 바인딩한다 — 로컬 개발용 자격증명이므로 밖에 열지 않는다.
+# One engine on the machine, so ports stay standard. Isolate inside the
+# engine (database, account, prefix) — see infra/README.md.
+# Bind 127.0.0.1 only — local-dev credentials, do not expose.
 #
-# 기본(up 만 하면 뜨는 것): mysql8 · pg16 · redis7
-# 선택(--profile 로): kafka · mongo · mail · minio
+# Default (plain up): mysql8 · pg16 · redis7
+# Optional (--profile): kafka · mongo · mail · minio
 #   docker compose --profile kafka up -d
 name: dev-infra
 
@@ -68,8 +68,8 @@ services:
       KAFKA_NODE_ID: 1
       KAFKA_PROCESS_ROLES: broker,controller
       KAFKA_CONTROLLER_QUORUM_VOTERS: 1@localhost:9093
-      # 호스트 클라이언트는 localhost:9092, 같은 dev-infra 네트워크의
-      # 컨테이너는 dev-kafka:19092 로 붙는다.
+      # Host clients use localhost:9092; containers on the dev-infra
+      # network use dev-kafka:19092.
       KAFKA_LISTENERS: INTERNAL://:19092,CONTROLLER://:9093,EXTERNAL://:9092
       KAFKA_ADVERTISED_LISTENERS: INTERNAL://dev-kafka:19092,EXTERNAL://localhost:9092
       KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: INTERNAL:PLAINTEXT,CONTROLLER:PLAINTEXT,EXTERNAL:PLAINTEXT
@@ -124,7 +124,7 @@ volumes:
   minio:
 
 networks:
-  # 프로젝트 compose의 컨테이너가 인프라에 붙어야 하면 이 네트워크를
-  # external로 참조한다. 호스트 프로세스는 그냥 localhost:<port>.
+  # Project compose containers that need infra join this network as
+  # external. Host processes use localhost:<port>.
   default:
     name: dev-infra

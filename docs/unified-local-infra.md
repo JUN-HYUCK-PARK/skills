@@ -1,4 +1,10 @@
-# dev-infra 통합 로컬 개발 인프라
+# Grove unified local infra (design notes)
+
+Written in Korean during the original design loop. Current English docs:
+`skills/grove/README.md`, `skills/grove/SKILL.md`, `infra/README.md`.
+Command names in this file use `de-novo-skills`.
+
+# Original title: 통합 로컬 개발 인프라
 
 | 항목 | 값 |
 | --- | --- |

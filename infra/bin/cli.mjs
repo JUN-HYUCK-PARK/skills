@@ -1,7 +1,7 @@
 #!/usr/bin/env node
-// de-novo-skills — Grove CLI. yml(runtime-profile)이 정본이고 CLI는 그것을
-// 그린다. 내리는 명령은 일부러 없다: 머신 인프라 위에 여러 프로젝트가 살고
-// 있어서, 중지는 사람이 docker compose 로 직접 결정한다.
+// de-novo-skills — Grove CLI. yaml is source of truth; the CLI paints it.
+// There is no down command: several projects live on machine infra, so a
+// human decides when to stop it.
 import { spawnSync } from 'node:child_process';
 import { readFileSync, realpathSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -22,7 +22,7 @@ import {
 const CLI = 'de-novo-skills';
 const DEFAULT_ENGINES = ['mysql', 'pg', 'redis'];
 
-// 엔진 이름 목록 → compose 서비스·프로필. 인자가 없으면 기본 3종.
+// Engine names → compose services and profiles. No args: default three.
 export function resolveEngines(names) {
   const chosen = names.length > 0 ? names : DEFAULT_ENGINES;
   const services = [];
@@ -30,7 +30,7 @@ export function resolveEngines(names) {
   for (const name of chosen) {
     const spec = ENGINES[ALIASES[name] ?? name];
     if (!spec) {
-      throw new Error(`모르는 엔진 "${name}" — 지원: ${Object.keys(ENGINES).join(', ')}`);
+      throw new Error(`unknown engine "${name}" — supported: ${Object.keys(ENGINES).join(', ')}`);
     }
     if (!services.includes(spec.service)) services.push(spec.service);
     if (spec.composeProfile && !profiles.includes(spec.composeProfile)) {
@@ -57,16 +57,16 @@ function cmdUp(args) {
     { stdio: 'inherit', encoding: undefined }
   );
   if (up.status !== 0) {
-    console.error(`up: docker compose 가 실패했다 (exit ${up.status}).`);
+    console.error(`up: docker compose failed (exit ${up.status}).`);
     return 1;
   }
-  // 명령이 0으로 끝난 것과 엔진이 있는 것은 다르다 — 컨테이너 상태를 직접 센다.
+  // Exit 0 is not the same as the engine existing — inspect container state.
   const states = services.map((service) => {
     const spec = Object.values(ENGINES).find((e) => e.service === service);
     return { service, ...containerState(spec.container) };
   });
   const ready = states.filter((s) => s.ready).length;
-  console.log(`엔진 ${ready}/${services.length}: ${states.map((s) => `${s.service}(${s.label})`).join(' ')}`);
+  console.log(`engines ${ready}/${services.length}: ${states.map((s) => `${s.service}(${s.label})`).join(' ')}`);
   return ready === services.length ? 0 : 1;
 }
 
@@ -77,11 +77,11 @@ function cmdStatus() {
     if (state.ready) ready += 1;
     const label =
       state.label === 'missing'
-        ? `안 떠 있음${spec.composeProfile ? ` (${CLI} up ${name})` : ''}`
+        ? `not running${spec.composeProfile ? ` (${CLI} up ${name})` : ''}`
         : `${state.label}${state.ready ? ' ✓' : ''}`;
     console.log(`  ${name.padEnd(6)} ${spec.service.padEnd(8)} ${label}`);
   }
-  console.log(`준비 ${ready} · 미기동 ${Object.keys(ENGINES).length - ready}`);
+  console.log(`ready ${ready} · not started ${Object.keys(ENGINES).length - ready}`);
   return 0;
 }
 
@@ -91,21 +91,21 @@ function cmdProvision(args) {
 }
 
 function printHelp() {
-  console.log(`${CLI} — Grove CLI (yml이 정본, CLI는 그린다)
+  console.log(`${CLI} — Grove CLI (yaml is source of truth; the CLI paints it)
 
-사용법:
-  ${CLI} init [프로젝트루트] [--slug NAME]
+usage:
+  ${CLI} init [project-root] [--slug NAME]
                                  [--engines a,b] [--services a,b] [--force]
-                                           최소 .agents/runtime-profile.yml (overlay: none)
-  ${CLI} setup [프로젝트루트|프로파일]     .agents/runtime-profile.yml 을 읽어
-                                           선언된 엔진 기동 + DB 프로비저닝 (멱등)
-  ${CLI} validate [프로젝트루트|프로파일]  프로파일 불변식 (docker 없이)
-  ${CLI} up [엔진 …]                       기본(${DEFAULT_ENGINES.join(' ')}) 또는 지정 엔진 기동
-  ${CLI} status                            엔진별 상태와 준비 수
-  ${CLI} provision (mysql|pg) <이름>       저수준: database + 전용 계정 하나
+                                           minimal .agents/runtime-profile.yml (overlay: none)
+  ${CLI} setup [project-root|profile]      read .agents/runtime-profile.yml,
+                                           start declared engines + provision DBs (idempotent)
+  ${CLI} validate [project-root|profile]   profile invariants (no docker)
+  ${CLI} up [engine …]                     default (${DEFAULT_ENGINES.join(' ')}) or named engines
+  ${CLI} status                            per-engine status and ready count
+  ${CLI} provision (mysql|pg) <name>       low-level: one database + dedicated account
 
-내리는 명령은 없다 — 머신 인프라 위에 여러 프로젝트가 살고 있어 중지는
-사람이 docker compose 로 직접 결정한다.`);
+there is no down command — several projects live on machine infra, so a human
+decides when to stop it with docker compose.`);
 }
 
 function main() {
@@ -134,14 +134,14 @@ function main() {
       printHelp();
       return 0;
     default:
-      console.error(`${CLI}: 모르는 명령 "${command}"\n`);
+      console.error(`${CLI}: unknown command "${command}"\n`);
       printHelp();
       return 1;
   }
 }
 
-// argv[1]은 realpath 로 비교한다. npm link 가 만드는 bin 은 symlink 라서
-// 경로 문자열 비교로는 불일치 → main 이 안 돌고 exit 0 — 조용한 거짓 통과가 된다.
+// Compare argv[1] via realpath. npm link bins are symlinks, so a string
+// compare misses main and exits 0 — a quiet false pass.
 function isMain() {
   if (!process.argv[1]) return false;
   try {

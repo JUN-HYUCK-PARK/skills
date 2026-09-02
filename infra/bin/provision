@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# 머신 공유 인프라에 프로젝트용 데이터베이스와 사용자를 멱등하게 만든다.
+# Idempotently create a project database and user on machine-shared infra.
 #
 #   provision mysql <name> [password]     # database <name> + user <name>
 #   provision pg    <name> [password]     # role <name> + database <name>
 #
-# 몇 번을 다시 돌려도 안전하다. 성공하면 접속 URL 한 줄을 찍는다.
+# Safe to re-run. On success prints one connection URL.
 set -euo pipefail
 
 usage() {

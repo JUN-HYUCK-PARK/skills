@@ -1,18 +1,18 @@
-# 최소 티어 예시: 서비스 2개짜리 프로젝트, overlay 없음, k3d 없음.
-# 남는 것은 주소 규칙과 소유 규칙뿐이다 — 그것만으로도 병렬 에이전트의
-# 포트 쟁탈과 중복 스택은 사라진다.
+# Minimal tier: two services, no overlay, no k3d.
+# What remains is addressing and ownership — enough to stop port fights
+# and cloned stacks among parallel agents.
 version: 1
 
 project:
   slug: sideapp
 
 addressing:
-  tld: localhost                # *.localhost — DNS 셋업 없음, 개인 머신용
+  tld: localhost                # *.localhost — no DNS setup, personal machine
   scheme:
-    shared: "{service}.{project}.{tld}"   # 한 머신 여러 프로젝트 대비
-    # overlay 스킴 없음 — overlay: none
+    shared: "{service}.{project}.{tld}"   # several projects on one machine
+    # no overlay scheme — overlay: none
   ports:
-    blocks: { api: 6000, web: 6100 }      # 다른 프로젝트의 블록과 안 겹치게
+    blocks: { api: 6000, web: 6100 }      # do not overlap other projects' blocks
     registry: README.md
 
 runtime:
@@ -34,9 +34,9 @@ services:
 overlay: none
 
 data:
-  infra: machine              # 엔진은 머신 공유 인프라(dev-infra infra/) — 직접 안 띄운다
+  infra: machine              # engines on machine-shared infra — do not start them here
   engines:
-    pg: [sideapp]             # infra/bin/provision pg sideapp 으로 만든 것
+    pg: [sideapp]             # created by infra/bin/provision pg sideapp
     redis: { prefix: "sideapp:" }
   migrate: pnpm run db:migrate
   fixtures: [seed-script]

@@ -1,5 +1,5 @@
-// 엔진 이름 → compose 서비스·컨테이너·프로비저닝 방법. 이 표가 setup이 아는
-// 전부이며, compose 파일에 새 엔진을 더하면 여기도 같이 늘린다.
+// Engine name → compose service, container, provision method. This table is
+// all setup knows; add a row when you add an engine to compose.
 export const ENGINES = {
   mysql: { service: 'mysql8', container: 'dev-mysql8', composeProfile: null, provision: 'mysql' },
   pg: { service: 'pg16', container: 'dev-pg16', composeProfile: null, provision: 'pg' },

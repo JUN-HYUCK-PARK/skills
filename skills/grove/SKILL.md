@@ -1,170 +1,181 @@
 ---
 name: grove
 description: >-
-  de-novo Grove — 한 머신의 공용 개발 땅. n개 프로젝트, 프로젝트당 m개 앱, 인프라 한 벌.
-  포트 대신 이름, 풀스택 복제 대신 얇은 overlay. 로컬 환경을 시작·점검·전환할 때,
-  포트를 맞출 때, 여러 에이전트가 같은 머신에서 동시에 작업·확인할 때, 새 프로젝트에
-  Grove를 심을 때, /grove 를 쓸 때 쓴다. 프로젝트 값은 .agents/runtime-profile.yml.
-  확인 도구(브라우저·e2e)는 범위가 아니다.
+  de-novo Grove — shared local ground on one machine. n projects, m apps each,
+  one infra set. Names instead of ports; thin overlays instead of cloned stacks.
+  Use when starting, checking, or switching a local environment; when matching
+  ports; when several agents work and verify on the same machine at once; when
+  planting Grove on a new project; when the user runs /grove. Project values
+  live in .agents/runtime-profile.yml. Browser QA and e2e runners are out of
+  scope.
 ---
 
 # Grove
 
-de-novo 스킬. 한 머신에서 여러 프로젝트와 에이전트가 같이 쓰는 개발 땅이다.
-땅(엔진)은 하나, 나무(프로젝트)는 n, 가지(앱)는 프로젝트마다 m. 접붙이기(overlay)는
-바꾼 가지만.
+A de-novo skill. Shared local ground for many projects and agents on one machine.
+One soil (engines), n trees (projects), m branches (apps) per project. Grafts
+(overlays) cover only the apps you changed. Human diagram and apply steps:
+[README.md](README.md).
 
-한 머신에서 여러 사람과 에이전트가 동시에 개발하면 환경이 이렇게 무너진다.
+On one machine, several people and agents break the environment in two ways:
 
-- **포트.** 프로젝트마다, 에이전트마다 스택을 띄우면 잘 알려진 포트를 쟁탈한다.
-  CORS·리다이렉트가 깨지고, "지금 그 앱이 어느 포트인지"에 답이 없어진다.
-- **병렬 확인.** 에이전트가 여럿이면 각자 자기 변경을 열어 보고 싶은데,
-  풀스택을 복제하면 포트가 터지고, 한 스택을 공유하면 서로의 배포를 덮어쓴다.
+- **Ports.** Each project and each agent starts a stack and fights over well-known
+  ports. CORS and redirects break. Nobody can answer which port that app is on.
+- **Parallel verification.** Several agents each want to open *their* change.
+  Cloning a full stack explodes ports. Sharing one stack overwrites deploys.
 
-이 스킬은 로컬 인프라를 한곳에서 운영해서 그 둘을 없앤다. 확인을 어떤
-도구로 하는지는 말하지 않는다 — 주는 것은 이름 붙은 주소와, 그 주소가
-가리키는 스택이다.
+This skill runs local infra in one place so those two stop happening. It does
+not prescribe how you verify — it gives named addresses and the stack they
+point at.
 
-**이 문서는 패턴만 말한다.** 도메인·포트·서비스 목록·백엔드·실제 명령은
-프로젝트 루트의 `.agents/runtime-profile.yml`에 있다. 작업 전에 먼저 읽어라.
-프로파일이 없으면 `de-novo-skills init <프로젝트 루트>`가 첫 작업이다. 스키마는
-[runtime-profile.md](references/runtime-profile.md). 구현 세부는 프로파일이
-고른 백엔드의 몫이다 — 여기서 백엔드를 고르지 않는다.
+**This file is the pattern only.** Domains, ports, service lists, backends, and
+real commands live in the project's `.agents/runtime-profile.yml`. Read it
+before you work. If there is no profile, first run
+`de-novo-skills init <project-root>`. Schema:
+[runtime-profile.md](references/runtime-profile.md). Implementation details
+belong to the backend the profile chose — this skill does not pick a backend.
 
-m은 프로파일 `services` 키의 수, 프로젝트는 `project.slug`다.
+`m` is the number of keys in profile `services`. The project is `project.slug`.
 
-## 운영 모델 — 네 기둥
+## Operating model — four pillars
 
-### 1. 장수하는 공유 baseline 하나
+### 1. One long-lived shared baseline
 
-공유는 두 층이다.
+Sharing has two layers.
 
-- **인프라 엔진(DB·캐시·브로커)은 머신에 하나.** 프로젝트가 소유하지 않는다.
-  분리는 포트가 아니라 엔진 내부 단위(database·계정·프리픽스)다. 그 단위들의
-  공통 이름이 프로젝트 **namespace**(프로파일 `project.namespace`, 기본 =
-  slug)다. 앱 층 분리 이름도 여기서 나온다. 백엔드가 그 이름을 어디에
-  쓰는지는 프로젝트 몫이다.
-- **앱 baseline은 프로젝트당 하나.** 에이전트 수만큼 풀스택을 띄우지 않는다.
-  m개 앱이 그 한 벌 위에 산다.
+- **Infra engines (DB, cache, broker) are one set on the machine.** Projects
+  do not own them. Isolate inside the engine (database, account, prefix), not
+  by port. The shared name for those units is the project **namespace**
+  (profile `project.namespace`, default = slug). App-layer isolation names
+  come from here too. Where a backend writes that name is the project's job.
+- **One app baseline per project.** Do not run a full stack per agent. The m
+  apps live on that one set.
 
-실행 방식은 프로파일 `runtime.profiles`가 정한다. 두 프로필이 같은 고정
-포트를 소유하면 **동시에 실행하지 않는다.** 전환은 명시적이다.
+How it runs is `runtime.profiles`. If two profiles own the same fixed ports,
+**do not run them at once.** Switch explicitly.
 
-### 2. 에이전트별 얇은 overlay
+### 2. Thin per-agent overlay
 
-병렬 확인은 풀스택 복제가 아니라 overlay다. **바꾼 앱만** 자기 환경에 얹고,
-나머지는 baseline으로 폴스루시킨다. 포트는 늘리지 않는다 — 주소만 갈라진다.
+Parallel verification is an overlay, not a cloned stack. Attach **only the
+apps you changed**; the rest fall through to baseline. Do not add ports —
+split by address.
 
-- 얹을 수 있는 앱은 `overlay.attachable`. `overlay.shared_only`는 얹지 않는다.
-- overlay 이미지는 정확한 리비전(full git SHA)이다. "최신"은 없다.
-- 일이 끝나면 즉시 detach하고 환경을 destroy한다. overlay는 작업 수명이다.
-- 동사는 프로파일 `runtime.commands.overlay`가 있을 때만 실행한다. 명령이
-  없거나 `overlay: none`이면 이 기둥을 적용하지 않는다.
+- Attachable apps are `overlay.attachable`. Never attach `overlay.shared_only`.
+- Overlay images are tagged with a full git SHA. There is no "latest".
+- Detach as soon as the override is unused, and destroy the env when the unit
+  of work ends. Overlay lifetime is the task.
+- Run overlay verbs only when `runtime.commands.overlay` exists. If the
+  command is missing or `overlay: none`, do not apply this pillar.
 
-### 3. 호스트네임 폴스루 라우팅
+### 3. Hostname fallthrough routing
 
-포트를 고르게 하지 않는다. 주소는 이름이다. 머신에 와일드카드 로컬 도메인
-하나를 두고, `addressing.scheme`이 이름 규칙을 정한다.
+Do not make people pick ports. Addresses are names. One wildcard local domain
+on the machine; `addressing.scheme` sets the name rules.
 
 ```
-shared  : {service}.{tld}              그 프로젝트 baseline의 그 앱
-overlay : {service}--{env}.{tld}       env에 attach돼 있으면 overlay,
-                                       아니면 자동으로 shared로 폴스루
+shared  : {service}.{tld}              that app on the project's baseline
+overlay : {service}--{env}.{tld}       overlay if attached to env,
+                                       else fall through to shared
 ```
 
-n개 프로젝트를 한 머신에서 돌리면 스킴에 `{project}`를 넣어 충돌을 없앤다.
-누가 그 이름을 듣는지는 `addressing.proxy`가 정한다. TLD·스킴 선택지는
-[runtime-profile.md](references/runtime-profile.md)의 addressing 절.
+When n projects share a machine, put `{project}` in the scheme so names do
+not collide. Who listens is `addressing.proxy`. TLD and scheme choices:
+addressing section of [runtime-profile.md](references/runtime-profile.md).
 
-### 4. 런타임 쓰기 단일 소유
+### 4. Single writer for runtime
 
-읽는 자는 많고 쓰는 자는 하나다 (`runtime.writers: 1`).
+Many readers, one writer (`runtime.writers: 1`).
 
-- **작업 워크트리에서 서비스를 기동하지 않는다.** 런타임 소유는 지정된 런타임
-  환경에 있다.
-- 에이전트는 공유 인프라를 시작·중지·재시작하지 않고, 공유 마이그레이션을
-  돌리지 않고, 공유 DB에 직접 쓰지 않는다. 필요하면 소유자에게 선언한다.
-- 데이터가 필요하면 `data.fixtures`가 허용한 경로로만 만들고, before/after
-  probe를 남긴다.
+- **Do not start services from a worktree.** Runtime ownership sits in the
+  designated runtime environment.
+- Agents do not start, stop, or restart shared infra, do not run shared
+  migrations, and do not write the shared DB directly. Declare the need to
+  the owner.
+- When you need data, create it only on paths `data.fixtures` allows, and
+  leave a before/after probe.
 
-## 절차
+## Procedure
 
-값은 프로파일, 명령도 프로파일이다. 없는 명령을 발명하지 않는다.
+Values come from the profile. Commands come from the profile. Do not invent a
+missing command.
 
-### 인프라 셋팅은 yml이 정본이다
+### Infra setup is the yaml
 
-쓰는 엔진은 `data.engines` 선언이 전부다. 손으로 고르지 말고 그 선언을 읽는
-도구를 돌린다 (`data.infra: machine`이면 `de-novo-skills setup <프로젝트 루트>`).
-선언된 엔진만 기동하고, 내부 단위를 멱등 프로비저닝하고, 수를 붙인 요약
-(엔진 n/n, DB n/n)을 출력한다. 새 엔진이 필요해지면 명령을 바꾸는 게 아니라
-**yml에 선언을 추가하고 다시 돌린다.**
+Declared engines are all of `data.engines`. Do not pick engines by hand; run
+the tool that reads the declaration (`de-novo-skills setup <project-root>`
+when `data.infra: machine`). Start only those engines, provision internal
+units idempotently, and print a counted summary (engines n/n, DBs n/n). When
+a new engine is needed, add it to the yaml and run again — do not invent a
+new command.
 
-프로파일을 쓰거나 고친 뒤에는 `de-novo-skills validate <프로젝트 루트>`로 불변식을
-센다. docker가 필요 없다.
+After writing or editing a profile, count invariants with
+`de-novo-skills validate <project-root>`. No docker required.
 
-### 상태 확인이 항상 먼저다
+### Status first, always
 
-무엇이든 하기 전에 현재 프로필과 상태를 조회한다. 명령은
-`runtime.commands.status`. "떠 있겠지"는 측정이 아니다 — `services.*.health`를
-실제로 친다. health 경로는 앱마다 다르다. 추측하지 말고 프로파일을 읽어라.
-health가 없는 앱(워커 등)은 프로파일에 없으니 만들지 않는다.
+Before anything else, query the current profile and status. The command is
+`runtime.commands.status`. "It is probably up" is not a measurement — hit
+`services.*.health`. Health paths differ per app. Do not guess; read the
+profile. Apps without health (workers and similar) are omitted from the
+profile; do not invent a path.
 
-### 시작과 전환
+### Start and switch
 
-1. `status`로 현재 상태 확인. 다른 프로필이 떠 있으면 먼저 내린다.
-2. plan-first: 적용 전에 무엇이 실행될지 출력하는 명령이 있으면 그것 먼저.
-3. 시작 후 **결과물로 검증한다** — 명령이 0으로 끝난 것과 환경이 있는 것은
-   다르다. health가 응답하는지, 인프라가 준비됐는지를 센다.
+1. Check status. If another profile is up, take it down first.
+2. Plan-first: if a command prints what would run, run that first.
+3. After start, **verify by artifacts** — exit 0 is not the same as the
+   environment existing. Count health responses and whether infra is ready.
 
-명령은 `runtime.commands.up` / `status`다.
+Commands are `runtime.commands.up` / `status`.
 
-### overlay 수명주기
+### Overlay lifecycle
 
-`runtime.commands.overlay`에 아래 동사를 붙여 실행한다. 그 명령이 없으면
-여기서 멈춘다.
+Append these verbs to `runtime.commands.overlay`. If that command is missing,
+stop here.
 
 ```
 create <env>
 attach <env> <service> --image <full-sha>
-  → {service}--{env}.{tld} 가 overlay를 가리키는지 확인
+  → confirm {service}--{env}.{tld} points at the overlay
 detach <env> <service>
 destroy <env>
 ```
 
-### 반영 방식을 확인하고 나서 "안 바뀐다"고 말하라
+### Check how changes land before you say "nothing changed"
 
-변경이 어떻게 보이는지는 `services.*.reflect`다.
+How a change shows up is `services.*.reflect`:
 
 ```
-source    고치면 바로 반영
-rebuild   다시 빌드 + 다시 띄워야 반영
-restart   재시작만 필요
+source    edit is live immediately
+rebuild   rebuild and restart before it shows
+restart   restart only
 ```
 
-"고친 내용이 안 보인다"의 최다 원인은 rebuild 앱을 고쳐놓고 같은 주소만
-다시 치는 것이다.
+The usual cause of "I don't see my edit" is changing a rebuild app and
+hitting the same address again.
 
-## 새 프로젝트에 셋팅하기
+## Setting up a new project
 
-1. `de-novo-skills init <프로젝트 루트>` 로 최소 프로파일을 심는다 (`overlay: none`).
-   `--slug` `--engines` `--services` 로 값을 넣을 수 있다. 그 다음 앱 목록(m)·
-   백엔드 티어·주소 스킴·데이터 정책을 프로파일에서 고친다. 스키마는
-   [runtime-profile.md](references/runtime-profile.md). 예시는
-   [examples/](examples/) — 값의 모양이지 이 스킬이 요구하는 백엔드가 아니다.
-2. **티어를 과하게 잡지 마라.** 앱이 적고 병렬 에이전트가 없으면 주소·소유
-   규칙만 적용하고 overlay는 생략한다(`overlay: none`). overlay는 m이 크고
-   여러 에이전트가 같은 프로젝트에서 동시에 확인할 때만 값이 있다.
-3. 포트 등록부를 프로파일이 가리키는 파일에 두고, 그것을 정본으로 선언한다.
-   등록부 밖의 임의 포트는 CORS·인증에서 먼저 죽는다.
+1. `de-novo-skills init <project-root>` plants a minimal profile
+   (`overlay: none`). `--slug` `--engines` `--services` can fill values.
+   Then edit app list (m), backend tier, address scheme, and data policy in
+   the profile. Schema: [runtime-profile.md](references/runtime-profile.md).
+   Examples: [examples/](examples/) — shape of values, not a required backend.
+2. **Do not over-tier.** If there are few apps and no parallel agents, apply
+   addressing and ownership only and leave overlay off (`overlay: none`).
+   Overlay pays off when m is large and several agents verify the same
+   project at once.
+3. Keep the port registry in the file the profile points at, and declare it
+   as source of truth. Ports outside the registry die first in CORS and auth.
 
-## 약화 금지 목록
+## Invariants — not weakenable
 
-프로젝트가 프로파일로 바꿀 수 있는 것은 값이다. 다음은 값이 아니라 불변식이며,
-프로파일로 약화할 수 없다.
+The profile may change values. These are not values; the profile cannot
+weaken them.
 
-- 상시 스택은 프로젝트당 하나 (`single_stack`)
-- 런타임 쓰기 소유자는 하나 (`writers: 1`)
-- 작업 워크트리에서 서비스 기동 금지
-- 공유 DB 직접 쓰기 금지, fixture 경로로만 데이터 생성
-- overlay 이미지는 정확한 리비전 태그
-- 시작·설치의 성공 판정은 명령 종료코드가 아니라 결과물 존재
+- One standing stack per project (`single_stack`)
+- One runtime writer (`writers: 1`)
+- No starting services from a worktree
+- No direct writes to the shared DB; create data only via fixture paths
+- Overlay images tagged with an exact revision
+- Success of start/install is artifacts existing, not exit code 0

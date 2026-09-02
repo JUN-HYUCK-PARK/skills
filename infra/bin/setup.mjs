@@ -1,11 +1,11 @@
 #!/usr/bin/env node
-// 프로젝트의 .agents/runtime-profile.yml(data.engines)을 읽어, 그 프로젝트가
-// 선언한 엔진만 머신 공유 인프라에서 준비한다:
-//   필요한 엔진 기동(--wait) → database 프로비저닝(멱등) → 수를 붙인 요약.
-// yml이 정본이고 이 스크립트는 그것을 그린다 — 엔진을 손으로 고르지 않는다.
+// Read a project's .agents/runtime-profile.yml (data.engines) and prepare
+// only those engines on machine-shared infra:
+//   start engines (--wait) → provision databases (idempotent) → counted summary.
+// yaml is source of truth; this script paints it — do not pick engines by hand.
 //
-//   node infra/bin/setup.mjs <프로젝트 루트 | 프로파일 파일>
-//   (인자 없으면 현재 디렉터리를 프로젝트 루트로 본다)
+//   node infra/bin/setup.mjs <project-root | profile-file>
+//   (no arg: current directory is the project root)
 import { spawnSync } from 'node:child_process';
 import { existsSync, readFileSync, realpathSync, statSync } from 'node:fs';
 import path from 'node:path';
@@ -28,21 +28,21 @@ export function resolveProfilePath(arg, cwd = process.cwd()) {
   if (existsSync(nested)) return nested;
   throw new Error(
     `runtime profile not found: ${nested}\n` +
-      `프로젝트 루트에 ${PROFILE_RELPATH} 가 없다 — ` +
-      `de-novo-skills init ${arg ?? '.'} 으로 최소 프로파일을 심는다.`
+      `no ${PROFILE_RELPATH} in the project root — ` +
+      `plant a minimal profile with de-novo-skills init ${arg ?? '.'}`
   );
 }
 
-// parseProfile 후 machine 만 받는다. 반환 모양은 기존 테스트가 기대하는
+// parseProfile, then require machine. Return shape tests expect:
 // { slug, namespace, engines }.
 export function readProfile(yamlText, source = 'runtime-profile.yml') {
   const parsed = parseProfile(yamlText, source);
   const infra = parsed.data.infra;
   if (infra !== 'machine') {
     throw new Error(
-      `${source}: data.infra 가 "machine" 이 아니다 (현재: ${JSON.stringify(infra ?? null)}). ` +
-        `이 도구는 머신 공유 인프라를 쓰는 프로젝트만 셋팅한다 — ` +
-        `"project" 는 프로젝트 자신의 스택이 정본이다.`
+      `${source}: data.infra is not "machine" (got ${JSON.stringify(infra ?? null)}). ` +
+        `this tool only sets up projects that use machine-shared infra — ` +
+        `"project" means the project's own stack is source of truth.`
     );
   }
   return {
@@ -52,7 +52,7 @@ export function readProfile(yamlText, source = 'runtime-profile.yml') {
   };
 }
 
-// { slug, namespace, engines } → 실행 계획. 순수 함수라서 docker 없이 검증할 수 있다.
+// { slug, namespace, engines } → plan. Pure function, no docker.
 export function planSetup({ slug, namespace, engines }) {
   const services = [];
   const composeProfiles = [];
@@ -67,10 +67,10 @@ export function planSetup({ slug, namespace, engines }) {
       for (const db of decl.databases) provisions.push({ engine: spec.provision, name: db });
     }
   }
-  if (engines.redis) notes.push(`redis 키 프리픽스 "${engines.redis.prefix}" 는 앱 설정이 지킨다`);
-  if (engines.kafka) notes.push(`kafka 토픽·그룹 프리픽스 "${engines.kafka.topicPrefix}" 는 앱 설정이 지킨다`);
-  if (engines.mongo) notes.push(`mongo database(${engines.mongo.databases.join(', ')})는 첫 접속 시 생성된다`);
-  if (engines.minio) notes.push(`minio bucket "${engines.minio.bucket}" 은 콘솔(9001)이나 mc 로 만든다`);
+  if (engines.redis) notes.push(`redis key prefix "${engines.redis.prefix}" is an app convention`);
+  if (engines.kafka) notes.push(`kafka topic/group prefix "${engines.kafka.topicPrefix}" is an app convention`);
+  if (engines.mongo) notes.push(`mongo database(${engines.mongo.databases.join(', ')}) is created on first connect`);
+  if (engines.minio) notes.push(`minio bucket "${engines.minio.bucket}" is created in the console (9001) or with mc`);
   return { slug, namespace: namespace ?? slug, services, composeProfiles, provisions, notes };
 }
 
@@ -91,14 +91,14 @@ export function containerState(container) {
   return { ready, label: health || (running === 'true' ? 'running' : 'stopped') };
 }
 
-// CLI(de-novo-skills)와 직접 실행이 공유하는 본체. 종료코드를 반환한다.
+// Shared body for the CLI and direct execution. Returns an exit code.
 export function runSetup(pathArg) {
   const profilePath = resolveProfilePath(pathArg);
   const profile = readProfile(readFileSync(profilePath, 'utf8'), profilePath);
   const plan = planSetup(profile);
 
   if (plan.services.length === 0) {
-    console.log(`${profile.slug}: data.engines 가 비어 있다 — 준비할 인프라 없음.`);
+    console.log(`${profile.slug}: data.engines is empty — nothing to prepare.`);
     return 0;
   }
 
@@ -114,11 +114,11 @@ export function runSetup(pathArg) {
   ];
   const up = run('docker', upArgs, { stdio: 'inherit', encoding: undefined });
   if (up.status !== 0) {
-    console.error(`setup: docker compose up 이 실패했다 (exit ${up.status}).`);
+    console.error(`setup: docker compose up failed (exit ${up.status}).`);
     return 1;
   }
 
-  // 명령이 0으로 끝난 것과 엔진이 있는 것은 다르다 — 컨테이너 상태를 직접 센다.
+  // Exit 0 is not the same as the engine existing — inspect container state.
   const states = plan.services.map((service) => {
     const spec = Object.values(ENGINES).find((e) => e.service === service);
     return { service, ...containerState(spec.container) };
@@ -134,23 +134,23 @@ export function runSetup(pathArg) {
       provisioned += 1;
       urls.push(result.stdout.trim().split('\n').at(-1));
     } else {
-      console.error(`provision ${engine} ${name} 실패:\n${result.stderr}`);
+      console.error(`provision ${engine} ${name} failed:\n${result.stderr}`);
     }
   }
 
   const nsSuffix = plan.namespace !== plan.slug ? ` (namespace: ${plan.namespace})` : '';
-  console.log(`\n■ ${plan.slug}${nsSuffix} — 머신 공유 인프라 준비`);
-  console.log(`  엔진  ${readyCount}/${plan.services.length}: ${engineLine}`);
+  console.log(`\n■ ${plan.slug}${nsSuffix} — machine-shared infra ready`);
+  console.log(`  engines  ${readyCount}/${plan.services.length}: ${engineLine}`);
   if (plan.provisions.length > 0) {
-    console.log(`  DB    ${provisioned}/${plan.provisions.length}${urls.length ? ':' : ''}`);
-    for (const url of urls) console.log(`        ${url}`);
+    console.log(`  DBs      ${provisioned}/${plan.provisions.length}${urls.length ? ':' : ''}`);
+    for (const url of urls) console.log(`           ${url}`);
   }
-  for (const note of plan.notes) console.log(`  규약  ${note}`);
+  for (const note of plan.notes) console.log(`  note     ${note}`);
 
   return readyCount === plan.services.length && provisioned === plan.provisions.length ? 0 : 1;
 }
 
-// symlink 로 불려도 잡히게 realpath 로 비교한다 (cli.mjs 의 isMain 과 같은 이유).
+// Compare realpath so npm-link symlinks still count as main (same as cli.mjs).
 function isMain() {
   if (!process.argv[1]) return false;
   try {

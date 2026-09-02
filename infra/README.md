@@ -1,116 +1,118 @@
-# 머신 공유 인프라
+# Machine-shared infra
 
-이 머신의 **모든 프로젝트**가 쓰는 데이터베이스·캐시·브로커. 프로젝트마다
-MySQL·Redis·PG를 새로 띄우지 않는다.
+Databases, caches, and brokers used by **every project** on this machine.
+Projects do not start their own MySQL, Redis, or Postgres.
 
-원칙은 하나다: **엔진은 머신에 하나, 분리는 엔진 안에서.** 머신에 하나뿐이므로
-포트도 표준 포트 그대로다 — 모든 도구의 기본 설정이 그냥 맞는다. 분리는 포트가
-아니라 엔진의 내부 단위로 한다:
+One rule: **one engine on the machine, isolate inside it.** Because there is
+only one, ports stay standard — default tool config just works. Isolation is
+an engine-internal unit, not a port:
 
-| 엔진     | 분리 단위                            | 만드는 법                          |
-| -------- | ------------------------------------ | ---------------------------------- |
-| MySQL    | database + 전용 계정                 | `bin/provision mysql <slug>`       |
-| Postgres | database + 전용 role                 | `bin/provision pg <slug>`          |
-| Redis    | 키 프리픽스 `<slug>:` (기본)         | 규약 — 앱 설정에 프리픽스 지정     |
-|          | 또는 논리 DB 번호 (0–15)             | 아래 등록부에 번호를 적고 사용     |
-| Kafka    | 토픽·컨슈머그룹 프리픽스 `<slug>.`   | 규약                               |
-| Mongo    | database                             | 접속 시 자동 생성                  |
-| MinIO    | bucket `<slug>-*`                    | 콘솔 또는 mc로 생성                |
+| Engine   | Isolation unit                       | How to create                       |
+| -------- | ------------------------------------ | ----------------------------------- |
+| MySQL    | database + dedicated account         | `bin/provision mysql <slug>`        |
+| Postgres | database + dedicated role            | `bin/provision pg <slug>`           |
+| Redis    | key prefix `<slug>:` (default)       | convention — set the prefix in app config |
+|          | or logical DB number (0–15)          | write the number in the registry below |
+| Kafka    | topic and consumer-group prefix `<slug>.` | convention                     |
+| Mongo    | database                             | created on first connect            |
+| MinIO    | bucket `<slug>-*`                    | console or mc                       |
 
-이 내부 단위들의 공통 이름이 프로젝트 **namespace**다 — 프로파일의
-`project.namespace`(기본 = slug) 하나에서 database·프리픽스·bucket 이름이
-전부 나오고, k8s를 쓰는 프로젝트는 앱 층의 k8s namespace도 같은 이름으로
-잇는다. 엔진별 문자 제약(`-`/`_`)은 셋팅 도구가 변환한다.
+The shared name for those units is the project **namespace** — one
+`project.namespace` (default = slug) produces database, prefix, and bucket
+names, and k8s-using projects reuse it for the app-layer namespace. Engine
+character rules (`-` / `_`) are rewritten by the setup tool.
 
-계정이 자기 database에만 GRANT되어 있는 것이 프로젝트 간 경계다. root/postgres
-계정은 프로비저닝 전용이지 앱 접속용이 아니다.
+The project boundary is GRANT: an account may only touch its own database.
+root/postgres accounts are for provisioning, not app connections.
 
-## 시작
+## Start
 
-CLI(체크아웃에서 `npm install && npm link` 후 `de-novo-skills`)가 정면이고,
-compose가 바닥이다:
-
-```bash
-de-novo-skills up              # 기본 3종 (mysql pg redis)
-de-novo-skills up kafka        # 선택 엔진 추가
-de-novo-skills status          # 엔진별 상태와 준비 수
-# 같은 일: docker compose -f infra/docker-compose.yml [--profile kafka] up -d --wait
-```
-
-`restart: unless-stopped`라서 Docker 엔진(OrbStack/Docker Desktop)이 로그인 시
-뜨면 인프라도 따라 뜬다. "매번 띄우는 일"은 여기서 끝난다.
-
-성공 판정은 명령 종료코드가 아니라 결과물이다:
+The CLI (`npm install && npm link`, then `de-novo-skills`) is the front;
+compose is the floor:
 
 ```bash
-docker compose -f infra/docker-compose.yml ps   # 전부 healthy 인지 센다
+de-novo-skills up              # default three (mysql pg redis)
+de-novo-skills up kafka        # add an optional engine
+de-novo-skills status          # per-engine status and ready count
+# same work: docker compose -f infra/docker-compose.yml [--profile kafka] up -d --wait
 ```
 
-## 엔진 목록
+`restart: unless-stopped`, so when the Docker engine (OrbStack / Docker
+Desktop) comes up at login, infra follows. "Start it every time" ends here.
 
-전부 127.0.0.1, 표준 포트. 자격증명은 로컬 개발 전용.
-
-| 엔진        | 컨테이너    | 접속                        | 프로필 |
-| ----------- | ----------- | --------------------------- | ------ |
-| MySQL 8.4   | dev-mysql8  | localhost:3306 (root/root)  | 기본   |
-| Postgres 16 | dev-pg16    | localhost:5432 (postgres/…) | 기본   |
-| Redis 7     | dev-redis7  | localhost:6379              | 기본   |
-| Kafka 3.9   | dev-kafka   | localhost:9092              | kafka  |
-| Mongo 7     | dev-mongo7  | localhost:27017             | mongo  |
-| Mailpit     | dev-mailpit | SMTP 1025 · UI 8025         | mail   |
-| MinIO       | dev-minio   | 9000 · 콘솔 9001            | minio  |
-
-프로젝트 compose 안의 컨테이너에서 붙을 때는 `host.docker.internal:<port>`,
-또는 external 네트워크 `dev-infra`에 조인해서 컨테이너 이름으로
-(kafka는 `dev-kafka:19092`).
-
-새 메이저 버전이 필요하면 기존 컨테이너를 갈지 않고 별도 서비스로 나란히
-띄운다(그때만 비표준 포트가 생긴다) — 다른 프로젝트가 기존 버전 위에 살고 있다.
-
-## 프로젝트 온보딩과 등록부
-
-프로젝트가 쓰는 엔진은 그 프로젝트의 `.agents/runtime-profile.yml`
-(`data.engines`)이 정본이다. 셋팅은 그 yml을 읽어서 한다:
+Success is artifacts, not exit code:
 
 ```bash
-de-novo-skills setup <프로젝트 루트>   # 선언된 엔진 기동 + DB 프로비저닝, 멱등
+docker compose -f infra/docker-compose.yml ps   # count healthy
 ```
 
-`de-novo-skills provision (mysql|pg) <이름>` 은 setup이 쓰는 저수준 도구다 —
-프로파일 없이 급히 DB 하나 만들 때만 직접 쓴다.
+## Engines
 
-database·계정 이름은 프로젝트 slug, 한 프로젝트가 여러 개면 `<slug>_<용도>`.
+All on 127.0.0.1, standard ports. Credentials are local-dev only.
 
-온보딩하면 **git에 안 들어가는 로컬 등록부**에 한 줄 추가한다 — 어느 머신에
-어떤 프로젝트가 사는지는 머신의 상태지 이 레포의 내용이 아니다:
+| Engine      | Container   | Connect                     | Profile |
+| ----------- | ----------- | --------------------------- | ------- |
+| MySQL 8.4   | dev-mysql8  | localhost:3306 (root/root)  | default |
+| Postgres 16 | dev-pg16    | localhost:5432 (postgres/…) | default |
+| Redis 7     | dev-redis7  | localhost:6379              | default |
+| Kafka 3.9   | dev-kafka   | localhost:9092              | kafka   |
+| Mongo 7     | dev-mongo7  | localhost:27017             | mongo   |
+| Mailpit     | dev-mailpit | SMTP 1025 · UI 8025         | mail    |
+| MinIO       | dev-minio   | 9000 · console 9001         | minio   |
+
+From a container in a project compose, use `host.docker.internal:<port>`, or
+join the external network `dev-infra` and the container name (kafka:
+`dev-kafka:19092`).
+
+Need a new major version? Run it beside the existing service (that is when a
+non-standard port appears) — other projects still live on the old version.
+
+## Project onboarding and registry
+
+Which engines a project uses is its `.agents/runtime-profile.yml`
+(`data.engines`). Setup reads that yaml:
+
+```bash
+de-novo-skills setup <project-root>   # start declared engines + provision DBs, idempotent
+```
+
+`de-novo-skills provision (mysql|pg) <name>` is the low-level tool setup
+uses — call it directly only when you need one DB in a hurry without a
+profile.
+
+Database and account names are the project slug; several per project use
+`<slug>_<purpose>`.
+
+Onboarding adds a line to a **local registry that is not in git** — which
+projects live on this machine is machine state, not this repo:
 
 ```
-infra/registry.local.md        (.gitignore 됨 — 이 머신의 분할 등록부 정본)
+infra/registry.local.md        (.gitignore — this machine's split registry)
 ```
 
-형식 (가상 예시):
+Shape (fictional example):
 
-| 프로젝트 | 엔진         | namespace | 비고                    |
-| -------- | ------------ | --------- | ----------------------- |
-| acme     | mysql, redis | acme      | db+계정 acme, 프리픽스 acme: |
+| Project | Engines      | namespace | Notes                   |
+| ------- | ------------ | --------- | ----------------------- |
+| acme    | mysql, redis | acme      | db+account acme, prefix acme: |
 
-## 규칙 (약화 금지)
+## Rules (not weakenable)
 
-- **프로젝트는 여기 있는 엔진을 자기 compose에 다시 선언하지 않는다.** 두
-  인스턴스가 생기는 순간 "지금 어느 DB를 보고 있나"에 답이 없어진다.
-- **프로젝트도 에이전트도 머신 인프라를 내리거나 재시작하지 않는다.** 다른
-  프로젝트가 지금 그 위에서 돌고 있다. 문제가 있으면 사람이 결정한다.
-- **다른 프로젝트의 database·프리픽스에 붙지 않는다.**
-- 실데이터·실비밀을 넣지 않는다.
-- 데이터는 named volume에 산다. `docker compose down -v`는 **모든 프로젝트의
-  로컬 데이터**를 지우는 파괴적 명령이다 — 지울 일이 있으면 개별 볼륨만.
+- **Projects do not re-declare these engines in their own compose.** Two
+  instances and "which DB am I looking at?" has no answer.
+- **Neither projects nor agents stop or restart machine infra.** Other
+  projects are running on it. A human decides if something is wrong.
+- **Do not attach to another project's database or prefix.**
+- Do not put real data or real secrets here.
+- Data lives on named volumes. `docker compose down -v` wipes **every
+  project's local data** — if you must delete, delete one volume.
 
-## 기존 프로젝트 이관
+## Migrating an existing project
 
-자기 compose/k8s 스택 안에 인프라를 소유하던 프로젝트는 점진 이관한다. 기존
-스택이 비표준 포트를 쓰고 있었다면 머신 인프라(표준 포트)와 **동시에 떠도
-충돌이 없다.** 절차: ① `provision`으로 database 생성 ② 앱 설정의 인프라
-주소를 머신 인프라로 변경 ③ 마이그레이션·데이터 이전 ④ 프로젝트 스택에서
-인프라 서비스 제거. 두 벌이 공존하는 동안 "지금 어느 쪽을 보고 있나"는 앱
-설정으로 판정한다 — 추측하지 않는다. 프로젝트별 이관 상태는
-`registry.local.md`에 적는다.
+Projects that still own infra inside their compose/k8s stack migrate
+gradually. If the old stack used non-standard ports, it can run next to
+machine infra (standard ports) without colliding. Steps: (1) `provision` a
+database (2) point app config at machine infra (3) migrate data (4) remove
+infra services from the project stack. While both exist, "which one am I
+looking at?" is the app config — do not guess. Per-project migration state
+goes in `registry.local.md`.
