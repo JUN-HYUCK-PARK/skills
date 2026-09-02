@@ -10,26 +10,16 @@ import { spawnSync } from 'node:child_process';
 import { existsSync, readFileSync, realpathSync, statSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { parse } from 'yaml';
+
+import { ALIASES, ENGINES } from '../lib/engines.mjs';
+import { parseProfile } from '../lib/profile.mjs';
+
+export { ALIASES, ENGINES };
 
 const INFRA_DIR = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 export const COMPOSE_FILE = path.join(INFRA_DIR, 'docker-compose.yml');
 export const PROVISION = path.join(INFRA_DIR, 'bin', 'provision');
 const PROFILE_RELPATH = path.join('.agents', 'runtime-profile.yml');
-const NAME_PATTERN = /^[a-z][a-z0-9_]*$/;
-
-// 엔진 이름 → compose 서비스·컨테이너·프로비저닝 방법. 이 표가 setup이 아는
-// 전부이며, compose 파일에 새 엔진을 더하면 여기도 같이 늘린다.
-export const ENGINES = {
-  mysql: { service: 'mysql8', container: 'dev-mysql8', composeProfile: null, provision: 'mysql' },
-  pg: { service: 'pg16', container: 'dev-pg16', composeProfile: null, provision: 'pg' },
-  redis: { service: 'redis7', container: 'dev-redis7', composeProfile: null },
-  kafka: { service: 'kafka', container: 'dev-kafka', composeProfile: 'kafka' },
-  mongo: { service: 'mongo7', container: 'dev-mongo7', composeProfile: 'mongo' },
-  mail: { service: 'mailpit', container: 'dev-mailpit', composeProfile: 'mail' },
-  minio: { service: 'minio', container: 'dev-minio', composeProfile: 'minio' },
-};
-export const ALIASES = { postgres: 'pg', postgresql: 'pg', mailpit: 'mail', s3: 'minio' };
 
 export function resolveProfilePath(arg, cwd = process.cwd()) {
   const target = path.resolve(cwd, arg ?? '.');
@@ -38,41 +28,16 @@ export function resolveProfilePath(arg, cwd = process.cwd()) {
   if (existsSync(nested)) return nested;
   throw new Error(
     `runtime profile not found: ${nested}\n` +
-      `프로젝트 루트에 ${PROFILE_RELPATH} 를 먼저 작성한다 — ` +
-      `스키마는 skills/shared-local-runtime/references/runtime-profile.md.`
+      `프로젝트 루트에 ${PROFILE_RELPATH} 가 없다 — ` +
+      `devinfra init ${arg ?? '.'} 으로 최소 프로파일을 심는다.`
   );
 }
 
-function databasesOf(value, slug, engine, source) {
-  const names = value === true ? [slug] : Array.isArray(value) ? value : null;
-  if (!names) {
-    throw new Error(`${source}: data.engines.${engine} 는 true 또는 database 이름 목록이어야 한다.`);
-  }
-  for (const name of names) {
-    if (typeof name !== 'string' || !NAME_PATTERN.test(name)) {
-      throw new Error(`${source}: database 이름은 [a-z][a-z0-9_]* — ${JSON.stringify(name)}`);
-    }
-  }
-  return names;
-}
-
-const NS_PATTERN = /^[a-z][a-z0-9_-]*$/;
-
-// yml 본문 → { slug, namespace, engines }. 머신 인프라를 쓰지 않는 프로파일은
-// 여기서 거른다. 모든 분리 단위의 기본값은 namespace(기본 = slug) 한 이름에서
-// 나온다 — 엔진별 문자 제약은 여기서 변환한다(database: -→_, bucket: _→-).
+// parseProfile 후 machine 만 받는다. 반환 모양은 기존 테스트가 기대하는
+// { slug, namespace, engines }.
 export function readProfile(yamlText, source = 'runtime-profile.yml') {
-  const doc = parse(yamlText);
-  const slug = doc?.project?.slug;
-  if (typeof slug !== 'string' || !NS_PATTERN.test(slug)) {
-    throw new Error(`${source}: project.slug 가 없거나 형식이 아니다.`);
-  }
-  const namespace = doc?.project?.namespace ?? slug;
-  if (typeof namespace !== 'string' || !NS_PATTERN.test(namespace)) {
-    throw new Error(`${source}: project.namespace 형식은 [a-z][a-z0-9_-]* 다.`);
-  }
-  const dbNamespace = namespace.replaceAll('-', '_');
-  const infra = doc?.data?.infra;
+  const parsed = parseProfile(yamlText, source);
+  const infra = parsed.data.infra;
   if (infra !== 'machine') {
     throw new Error(
       `${source}: data.infra 가 "machine" 이 아니다 (현재: ${JSON.stringify(infra ?? null)}). ` +
@@ -80,39 +45,11 @@ export function readProfile(yamlText, source = 'runtime-profile.yml') {
         `"project" 는 프로젝트 자신의 스택이 정본이다.`
     );
   }
-  const raw = doc?.data?.engines ?? {};
-  const engines = {};
-  for (const [key, value] of Object.entries(raw)) {
-    const canon = ALIASES[key] ?? key;
-    if (!(canon in ENGINES)) {
-      throw new Error(
-        `${source}: 모르는 엔진 "${key}" — 지원: ${Object.keys(ENGINES).join(', ')}`
-      );
-    }
-    switch (canon) {
-      case 'mysql':
-      case 'pg':
-      case 'mongo':
-        engines[canon] = { databases: databasesOf(value, dbNamespace, key, source) };
-        break;
-      case 'redis':
-        engines.redis = { prefix: (value === true ? null : value?.prefix) ?? `${namespace}:` };
-        break;
-      case 'kafka':
-        engines.kafka = {
-          topicPrefix: (value === true ? null : value?.topic_prefix) ?? `${namespace}.`,
-        };
-        break;
-      case 'minio':
-        engines.minio = {
-          bucket: (value === true ? null : value?.bucket) ?? namespace.replaceAll('_', '-'),
-        };
-        break;
-      default:
-        engines[canon] = {};
-    }
-  }
-  return { slug, namespace, engines };
+  return {
+    slug: parsed.project.slug,
+    namespace: parsed.project.namespace,
+    engines: parsed.engines,
+  };
 }
 
 // { slug, namespace, engines } → 실행 계획. 순수 함수라서 docker 없이 검증할 수 있다.

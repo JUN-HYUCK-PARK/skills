@@ -3,15 +3,18 @@
 // 그것을 그린다. 내리는 명령은 일부러 없다: 머신 인프라 위에 여러 프로젝트가
 // 살고 있어서, 중지는 사람이 docker compose 로 직접 결정한다.
 import { spawnSync } from 'node:child_process';
-import { realpathSync } from 'node:fs';
+import { readFileSync, realpathSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
+import { runInit } from '../lib/init.mjs';
+import { formatValidateReport, parseProfile } from '../lib/profile.mjs';
 import {
   ALIASES,
   COMPOSE_FILE,
   ENGINES,
   PROVISION,
   containerState,
+  resolveProfilePath,
   run,
   runSetup,
 } from './setup.mjs';
@@ -90,8 +93,12 @@ function printHelp() {
   console.log(`devinfra — 머신 공유 개발 인프라 CLI (yml이 정본, CLI는 그린다)
 
 사용법:
+  devinfra init [프로젝트루트] [--slug NAME]
+                                 [--engines a,b] [--services a,b] [--force]
+                                           최소 .agents/runtime-profile.yml (overlay: none)
   devinfra setup [프로젝트루트|프로파일]   .agents/runtime-profile.yml 을 읽어
                                            선언된 엔진 기동 + DB 프로비저닝 (멱등)
+  devinfra validate [프로젝트루트|프로파일] 프로파일 불변식 (docker 없이)
   devinfra up [엔진 …]                     기본(${DEFAULT_ENGINES.join(' ')}) 또는 지정 엔진 기동
   devinfra status                          엔진별 상태와 준비 수
   devinfra provision (mysql|pg) <이름>     저수준: database + 전용 계정 하나
@@ -103,8 +110,16 @@ function printHelp() {
 function main() {
   const [command, ...rest] = process.argv.slice(2);
   switch (command) {
+    case 'init':
+      return runInit(rest);
     case 'setup':
       return runSetup(rest[0]);
+    case 'validate': {
+      const profilePath = resolveProfilePath(rest[0]);
+      const profile = parseProfile(readFileSync(profilePath, 'utf8'), profilePath);
+      console.log(formatValidateReport(profile));
+      return 0;
+    }
     case 'up':
       return cmdUp(rest);
     case 'status':

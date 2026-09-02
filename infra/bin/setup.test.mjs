@@ -130,5 +130,5 @@ test('resolveProfilePath: 디렉터리를 주면 .agents/runtime-profile.yml 을
   writeFileSync(file, 'version: 1\n');
   assert.equal(resolveProfilePath(root), file);
   assert.equal(resolveProfilePath(file), file);
-  assert.throws(() => resolveProfilePath(path.join(root, 'no-such-dir')), /not found/);
+  assert.throws(() => resolveProfilePath(path.join(root, 'no-such-dir')), /devinfra init/);
 });

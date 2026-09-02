@@ -2,7 +2,9 @@
 
 프로젝트 루트의 `.agents/runtime-profile.yml`. 스킬은 패턴을 말하고, 이 파일은
 그 패턴에 들어가는 이 프로젝트의 값을 말한다. **스킬 본문을 복사해 오지 마라** —
-여기에는 값·경로·명령만 둔다.
+여기에는 값·경로·명령만 둔다. 최상위 키는 `version` `project` `addressing`
+`runtime` `services` `overlay` `data` 만 — `qa` 같은 모르는 키는
+`devinfra validate` 가 거절한다.
 
 ## 전체 스키마 (주석이 스펙이다)
 
@@ -12,9 +14,11 @@ version: 1
 project:
   slug: myproject               # 호스트네임·머신 등록부에 쓰는 식별자
   # namespace: myproject_dev    # 모든 내부 분리 단위의 공통 이름. 생략하면 slug
+  # host: myproject             # DNS 라벨. 생략하면 slug의 _→-
 
 addressing:
   tld: local.myproject.dev      # 머신 공용 와일드카드 네임스페이스 (아래 참조)
+  # proxy: none                 # 생략=none. none|machine|project|portless
   scheme:
     shared: "{service}.{tld}"
     overlay: "{service}--{env}.{tld}"
@@ -65,13 +69,22 @@ data:
   migrate: pnpm run db:migrate:local
   fixtures: [ui, official-api, fixture-endpoint, seed-script]
   forbid_direct_db_writes: true # 불변식
-
-qa:                             # 브라우저 QA가 있는 프로젝트만
-  auth_file: e2e-auth.yml
-  default_account: default
 ```
 
 ## 값을 정하는 법
+
+### addressing.proxy
+
+이 프로젝트 호스트네임을 **누가 듣는지**. 머신 Caddy를 쓸지와 다르다.
+
+| 값 | 의미 |
+| --- | --- |
+| `none` (생략 기본) | URL만 그린다. 리스너를 안 연다 |
+| `machine` | 이 레포 Caddy가 `{service}.{project}.{tld}` 를 듣는다 |
+| `project` | 프로젝트(k3d Gateway 등)가 듣는다. 머신 Caddy 라우트에서 빠진다 |
+| `portless` | 호스트 프로세스 래퍼. 머신 폴스루의 정본이 아니다 |
+
+k3d가 이미 `:80`을 쓰는 프로젝트는 `project`를 **명시**한다. 생략이 `machine`이면 setup만으로 그 포트를 뺏는다.
 
 ### addressing.tld — "다양한 도메인"의 자리
 
@@ -92,7 +105,7 @@ qa:                             # 브라우저 QA가 있는 프로젝트만
 
 ```
 서비스 1~2개, 병렬 에이전트 없음   → planner(compose)만. developer 생략
-멀티서비스, 병렬 에이전트, QA URL  → developer 추가. backend는:
+멀티서비스, 병렬 에이전트          → developer 추가. backend는:
   k8s로 배포하는 프로젝트           → k3d (매니페스트 재사용)
   그 외                             → compose + 프록시 라우팅으로 충분
 ```

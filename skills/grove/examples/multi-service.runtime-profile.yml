@@ -8,6 +8,7 @@ project:
 
 addressing:
   tld: local.acme.dev           # 소유 실도메인 방식 (와일드카드 → 127.0.0.1).
+  proxy: project                # k3d Gateway 가 호스트네임을 듣는다. 머신 Caddy 아님
   scheme:                       # 프로젝트 하나가 TLD를 독점하므로 {project} 없이 씀
     shared: "{service}.{tld}"
     overlay: "{service}--{env}.{tld}"
@@ -55,7 +56,3 @@ data:
   migrate: pnpm run db:migrate:local
   fixtures: [ui, official-api, fixture-endpoint, seed-script]
   forbid_direct_db_writes: true
-
-qa:
-  auth_file: e2e-auth.yml
-  default_account: default
