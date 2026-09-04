@@ -14,17 +14,24 @@ Agents working in this catalog: [`AGENTS.md`](AGENTS.md). Skill load paths: [`.a
 
 ## CLI
 
-Grove's machine-engine and profile tool. Once per checkout:
+Grove's machine-engine, profile, and overlay-lifecycle tool. Once per **this
+catalog** checkout, not per consuming project:
 
 ```bash
 npm install && npm link
 ```
 
-Then `de-novo-skills init | validate | setup | up | status | provision`.
-Without a link, `node infra/bin/cli.mjs …` works the same. There is no down command —
+Then consuming projects call `de-novo skills infra status` (and `infra up`,
+`setup`, `init`, `validate`, `urls`, `overlay`). They do not get an `infra/`
+directory and must not add one. `de-novo-skills` is an alias without the `skills`
+token. Machine engines are Grove-central (`infra` next to this CLI). `setup`
+provisions a project's isolation units on that set. Without a link,
+`node infra/bin/cli.mjs …` works the same. There is no down command —
 stopping machine infra is a human decision because several projects live on it.
 
 Engine table and ports: [`infra/README.md`](infra/README.md).
+Overlay lifecycle and cleanup contract:
+[`skills/grove/references/overlay-contract.md`](skills/grove/references/overlay-contract.md).
 
 ## Layout
 
@@ -34,5 +41,7 @@ AGENTS.md        how agents work in this catalog
 skills/          skill sources. add a skill as <name>/SKILL.md
   grove/         first skill
 infra/           machine-shared engines Grove uses
+  addressing.yml this checkout's TLD and hostname scheme
+  docker-compose.yml engine catalog (profile = engine id)
 docs/            design notes
 ```

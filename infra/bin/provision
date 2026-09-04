@@ -1,54 +1,63 @@
 #!/usr/bin/env bash
 # Idempotently create a project database and user on machine-shared infra.
 #
-#   provision mysql <name> [password]     # database <name> + user <name>
-#   provision pg    <name> [password]     # role <name> + database <name>
+#   provision mysql <name>     # database <name> + user <name>
+#   provision pg    <name>     # role <name> + database <name>
 #
-# Safe to re-run. On success prints one connection URL.
+# GROVE_PROVISION_PASSWORD overrides the local-development default without
+# putting a credential in argv. Safe to re-run. Output never contains it.
 set -euo pipefail
 
 usage() {
-  echo "usage: provision (mysql|pg) <name> [password]" >&2
+  echo "usage: provision (mysql|pg) <name>" >&2
   exit 1
 }
 
 engine=${1-}
 name=${2-}
-pass=${3-${name}}
-[[ -n ${engine} && -n ${name} ]] || usage
+[[ $# -eq 2 && -n ${engine} && -n ${name} ]] || usage
+pass=${GROVE_PROVISION_PASSWORD-${name}}
 [[ ${name} =~ ^[a-z][a-z0-9_]*$ ]] || {
   echo "provision: name must match [a-z][a-z0-9_]* — got '${name}'" >&2
+  exit 1
+}
+[[ ${pass} =~ ^[A-Za-z0-9_.~-]{1,128}$ ]] || {
+  echo "provision: GROVE_PROVISION_PASSWORD must use 1-128 safe URL characters" >&2
   exit 1
 }
 
 require_container() {
   docker inspect -f '{{.State.Running}}' "$1" 2>/dev/null | grep -q true || {
     echo "provision: container $1 is not running. Start infra first:" >&2
-    echo "  docker compose -f \"$(dirname "$0")/../docker-compose.yml\" up -d --wait" >&2
+    echo "  de-novo skills infra up $2" >&2
     exit 1
   }
 }
 
 case ${engine} in
   mysql)
-    require_container dev-mysql8
+    require_container dev-mysql8 mysql
     docker exec -i dev-mysql8 mysql -uroot -proot 2>/dev/null <<SQL
 CREATE DATABASE IF NOT EXISTS \`${name}\`;
 CREATE USER IF NOT EXISTS '${name}'@'%' IDENTIFIED BY '${pass}';
+ALTER USER '${name}'@'%' IDENTIFIED BY '${pass}';
 GRANT ALL PRIVILEGES ON \`${name}\`.* TO '${name}'@'%';
 FLUSH PRIVILEGES;
 SQL
-    echo "mysql://${name}:${pass}@127.0.0.1:3306/${name}"
+    echo "DB 1/1: mysql ${name}"
     ;;
   pg)
-    require_container dev-pg16
+    require_container dev-pg16 pg
     docker exec -i dev-pg16 psql -U postgres -v ON_ERROR_STOP=1 --quiet <<SQL
 SELECT 'CREATE ROLE ${name} LOGIN PASSWORD ''${pass}'''
 WHERE NOT EXISTS (SELECT FROM pg_roles WHERE rolname = '${name}')\gexec
+ALTER ROLE ${name} WITH LOGIN PASSWORD '${pass}';
 SELECT 'CREATE DATABASE ${name} OWNER ${name}'
 WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = '${name}')\gexec
+REVOKE ALL ON DATABASE ${name} FROM PUBLIC;
+GRANT ALL ON DATABASE ${name} TO ${name};
 SQL
-    echo "postgres://${name}:${pass}@127.0.0.1:5432/${name}"
+    echo "DB 1/1: pg ${name}"
     ;;
   *)
     usage

@@ -46,9 +46,14 @@ test('multi-service example is overlay active, proxy project', () => {
   assert.equal(p.overlay.attachable.length, 5);
   assert.equal(p.overlay.sharedOnly.length, 2);
   assert.ok(p.overlay.command);
+  assert.equal(p.overlay.staleAfter, '1d');
+  assert.equal(p.overlay.imageTag, 'full-git-sha');
   assert.equal(p.addressing.proxy, 'project');
   const report = formatValidateReport(p);
-  assert.match(report, /overlay active \(attachable 5, shared_only 2, command present\)/);
+  assert.match(
+    report,
+    /overlay active \(attachable 5, shared_only 2, command present, stale_after 1d\)/
+  );
 });
 
 test('an engines-only profile passes with overlay omitted', () => {
@@ -267,5 +272,178 @@ project: { slug: acme }
 data: { infra: machine, engines: { oracle: true } }
 `),
     /oracle/
+  );
+});
+
+test('an unsupported explicit profile version is rejected', () => {
+  assert.throws(
+    () =>
+      parse(`
+version: 999
+project: { slug: acme }
+data: { infra: machine }
+`),
+    /version/
+  );
+});
+
+test('omitted data.infra uses the documented machine default', () => {
+  const profile = parse(`
+project: { slug: acme }
+data: {}
+`);
+  assert.equal(profile.data.infra, 'machine');
+  assert.equal(readProfile('project: { slug: acme }\ndata: {}\n').engines.mysql, undefined);
+});
+
+test('data.infra rejects misspelled authority values', () => {
+  assert.throws(
+    () =>
+      parse(`
+project: { slug: acme }
+data: { infra: machien }
+`),
+    /data\.infra/
+  );
+});
+
+test('engine false is rejected instead of enabling a default', () => {
+  assert.throws(
+    () =>
+      parse(`
+project: { slug: acme }
+data: { infra: machine, engines: { redis: false } }
+`),
+    /data\.engines\.redis/
+  );
+});
+
+test('engine-specific maps reject unknown keys and wrong value types', () => {
+  assert.throws(
+    () =>
+      parse(`
+project: { slug: acme }
+data: { infra: machine, engines: { kafka: { prefix: 42 } } }
+`),
+    /data\.engines\.kafka/
+  );
+});
+
+test('canonical and alias engine declarations cannot silently overwrite', () => {
+  assert.throws(
+    () =>
+      parse(`
+project: { slug: acme }
+data:
+  infra: machine
+  engines:
+    pg: true
+    postgres: true
+`),
+    /declared more than once/
+  );
+});
+
+test('a scalar service spec is rejected instead of becoming an empty map', () => {
+  assert.throws(
+    () =>
+      parse(`
+project: { slug: acme }
+services: { api: disabled }
+data: { infra: machine }
+`),
+    /services\.api/
+  );
+});
+
+test('overlay.shared_only naming a missing service is rejected', () => {
+  assert.throws(
+    () =>
+      parse(`
+project: { slug: acme }
+addressing:
+  scheme:
+    shared: "{service}.{tld}"
+    overlay: "{service}--{env}.{tld}"
+services:
+  api: { kind: api }
+overlay:
+  attachable: [api]
+  shared_only: [ghost]
+data: { infra: machine }
+`),
+    /shared_only/
+  );
+});
+
+test('overlay lifecycle policy rejects invalid duration, image mode, and unknown keys', () => {
+  const profile = (overlayFields) => `
+project: { slug: acme }
+addressing:
+  scheme:
+    shared: "{service}.{tld}"
+    overlay: "{service}--{env}.{tld}"
+services:
+  api: { kind: api }
+overlay:
+  attachable: [api]
+${overlayFields}
+data: { infra: machine }
+`;
+  assert.throws(() => parse(profile('  stale_after: tomorrow')), /stale_after/);
+  assert.throws(() => parse(profile('  image_tag: latest')), /image_tag/);
+  assert.throws(() => parse(profile('  ttl: 1d')), /unknown key "ttl"/);
+});
+
+test('runtime.commands.overlay must be a non-empty command string', () => {
+  assert.throws(
+    () =>
+      parse(`
+project: { slug: acme }
+addressing:
+  scheme:
+    shared: "{service}.{tld}"
+    overlay: "{service}--{env}.{tld}"
+runtime: { commands: { overlay: "" } }
+services: { api: { kind: api } }
+overlay: { attachable: [api] }
+data: { infra: machine }
+`),
+    /non-empty string/
+  );
+});
+
+test('addressing.tld must be a string DNS name', () => {
+  assert.throws(
+    () =>
+      parse(`
+project: { slug: acme }
+addressing: { tld: 123 }
+data: { infra: machine }
+`),
+    /addressing\.tld/
+  );
+});
+
+test('address schemes reject malformed braces and invalid literal labels', () => {
+  assert.throws(
+    () =>
+      parse(`
+project: { slug: acme }
+addressing:
+  scheme: { shared: "bad_{service}.{tld}" }
+data: { infra: machine }
+`),
+    /scheme\.shared/
+  );
+  assert.throws(
+    () =>
+      parse(`
+project: { slug: acme }
+addressing:
+  scheme: { shared: "{service}.{tld" }
+data: { infra: machine }
+`),
+    /scheme\.shared/
   );
 });

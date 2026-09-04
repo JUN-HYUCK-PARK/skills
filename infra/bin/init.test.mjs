@@ -35,7 +35,9 @@ test('renderInitYaml is overlay none and passes parseProfile', () => {
   assert.equal(profile.overlay.mode, 'off');
   assert.equal(profile.overlay.explicitNone, true);
   assert.equal(profile.addressing.proxy, 'none');
+  assert.equal(profile.addressing.tld, null);
   assert.equal(profile.addressing.scheme.shared, '{service}.{project}.{tld}');
+  assert.doesNotMatch(yaml, /^  tld:/m);
   assert.deepEqual(Object.keys(profile.services), ['api', 'web']);
   assert.deepEqual(profile.engines.pg.databases, ['sideapp']);
   assert.equal(profile.engines.redis, undefined);
@@ -91,7 +93,7 @@ test('a directory name that is a slug works without --slug', () => {
   assert.equal(profile.project.slug, 'sideapp');
 });
 
-test('de-novo-skills init then validate is 5/5', () => {
+test('de-novo skills init then validate is 5/5', () => {
   const root = tmpProject('init-cli');
   const init = spawnSync(
     process.execPath,
@@ -117,5 +119,18 @@ test('an existing profile makes the CLI non-zero and leaves contents', () => {
   });
   assert.notEqual(result.status, 0);
   assert.match(result.stderr, /already exists/);
+  assert.equal(readFileSync(file, 'utf8'), 'keep\n');
+});
+
+test('force validates clone-local addressing before replacing an existing profile', () => {
+  const root = tmpProject('init-atomic');
+  mkdirSync(path.join(root, '.agents'));
+  const file = path.join(root, '.agents', 'runtime-profile.yml');
+  writeFileSync(file, 'keep\n');
+  writeFileSync(
+    path.join(root, '.agents', 'runtime-profile.local.yml'),
+    'addressing: { tld: "not a valid host" }\n'
+  );
+  assert.throws(() => runInit(['--slug', 'acme', '--force'], root), /tld/);
   assert.equal(readFileSync(file, 'utf8'), 'keep\n');
 });

@@ -8,7 +8,7 @@ project:
 
 addressing:
   tld: local.acme.dev           # owned real domain (wildcard → 127.0.0.1).
-  proxy: project                # k3d Gateway listens. not machine Caddy
+  proxy: project                # project listens (k3d Gateway). Grove prints names only
   scheme:                       # this project owns the TLD, so no {project}
     shared: "{service}.{tld}"
     overlay: "{service}--{env}.{tld}"
@@ -26,7 +26,7 @@ runtime:
       compose_file: docker-compose.yml
     developer:                  # development that needs overlay
       backend: k3d
-      cluster: local
+      cluster: local            # app cluster. Grove k3d connect never defaults to this
   commands:
     profile: node tools/dev-environment.mjs profile
     status: node tools/dev-environment.mjs status
@@ -46,11 +46,12 @@ overlay:
   attachable: [store-web, admin-web, kiosk, catalog-api, order-api]
   shared_only: [auth-api, billing-worker]   # auth and consumers — never attach
   image_tag: full-git-sha
+  stale_after: 1d            # example policy; each consuming project chooses its own
 
 data:
   infra: machine              # engines on machine-shared infra — do not start them here
   engines:
-    mysql: [acme]             # created by infra/bin/provision mysql acme
+    mysql: [acme]             # created by `de-novo skills setup` from this declaration
     redis: { prefix: "acme:" }
     kafka: { topic_prefix: "acme." }
   migrate: pnpm run db:migrate:local

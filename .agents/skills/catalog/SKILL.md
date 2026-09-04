@@ -27,6 +27,7 @@ belong in it.
 | `skills/<name>/examples/` | Shape of values, not a required backend. |
 | `.agents/skills/<name>` | Relative symlink to `../../skills/<name>`. |
 | Root `README.md` Skills table | One-line index. |
+| `infra/addressing.yml` | This checkout's TLD and hostname scheme. Clone override: `addressing.local.yml`. |
 
 `name` in frontmatter equals the directory name. Description includes what
 it does and when to use it (trigger phrases, `/name`).

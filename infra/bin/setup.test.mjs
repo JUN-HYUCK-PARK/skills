@@ -1,10 +1,22 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { spawnSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 
-import { ENGINES, readProfile, planSetup, resolveProfilePath } from './setup.mjs';
+import {
+  ENGINES,
+  PROVISION,
+  planSetup,
+  readProfile,
+  resolveProfilePath,
+  stateFromInspect,
+} from './setup.mjs';
+
+const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
+const SETUP = path.join(REPO_ROOT, 'infra/bin/setup.mjs');
 
 const FULL_PROFILE = `
 version: 1
@@ -20,7 +32,7 @@ data:
 test('multi-engine profile → service, compose-profile, provision plan', () => {
   const plan = planSetup(readProfile(FULL_PROFILE));
   assert.deepEqual(plan.services, ['mysql8', 'redis7', 'kafka']);
-  assert.deepEqual(plan.composeProfiles, ['kafka']);
+  assert.deepEqual(plan.composeProfiles, ['mysql', 'redis', 'kafka']);
   assert.deepEqual(plan.provisions, [
     { engine: 'mysql', name: 'acme' },
     { engine: 'mysql', name: 'acme_audit' },
@@ -123,6 +135,18 @@ test('every ENGINES row has a container name', () => {
   }
 });
 
+test('a running container without a health result is not ready', () => {
+  assert.deepEqual(stateFromInspect('true|healthy\n'), { ready: true, label: 'healthy' });
+  assert.deepEqual(stateFromInspect('true|\n'), {
+    ready: false,
+    label: 'healthcheck missing',
+  });
+  assert.deepEqual(stateFromInspect('true|unhealthy\n'), {
+    ready: false,
+    label: 'unhealthy',
+  });
+});
+
 test('resolveProfilePath: a directory finds .agents/runtime-profile.yml', () => {
   const root = mkdtempSync(path.join(tmpdir(), 'setup-test-'));
   mkdirSync(path.join(root, '.agents'));
@@ -130,5 +154,40 @@ test('resolveProfilePath: a directory finds .agents/runtime-profile.yml', () => 
   writeFileSync(file, 'version: 1\n');
   assert.equal(resolveProfilePath(root), file);
   assert.equal(resolveProfilePath(file), file);
-  assert.throws(() => resolveProfilePath(path.join(root, 'no-such-dir')), /de-novo-skills init/);
+  assert.throws(() => resolveProfilePath(path.join(root, 'no-such-dir')), /de-novo skills init/);
+});
+
+test('pg provision revokes PUBLIC connect on the project database', () => {
+  const text = readFileSync(PROVISION, 'utf8');
+  assert.match(text, /REVOKE ALL ON DATABASE \$\{name\} FROM PUBLIC/);
+  assert.match(text, /GRANT ALL ON DATABASE \$\{name\} TO \$\{name\}/);
+});
+
+test('provision does not print connection URLs containing credentials', () => {
+  const text = readFileSync(PROVISION, 'utf8');
+  assert.doesNotMatch(text, /echo "(?:mysql|postgres):\/\//);
+});
+
+test('provision updates credentials when an account already exists', () => {
+  const text = readFileSync(PROVISION, 'utf8');
+  assert.match(text, /ALTER USER/);
+  assert.match(text, /ALTER ROLE/);
+});
+
+test('provision remediation uses the profiled Grove command', () => {
+  const text = readFileSync(PROVISION, 'utf8');
+  assert.match(text, /de-novo skills infra up/);
+  assert.doesNotMatch(text, /docker compose .* up -d --wait/);
+});
+
+test('direct setup invocation rejects extra arguments before any engine action', () => {
+  const root = mkdtempSync(path.join(tmpdir(), 'setup-args-'));
+  mkdirSync(path.join(root, '.agents'));
+  writeFileSync(
+    path.join(root, '.agents', 'runtime-profile.yml'),
+    'version: 1\nproject: { slug: acme }\ndata: { infra: machine }\n'
+  );
+  const result = spawnSync(process.execPath, [SETUP, root, 'ignored-extra'], { encoding: 'utf8' });
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /unexpected argument/);
 });

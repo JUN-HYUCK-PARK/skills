@@ -29,7 +29,7 @@ export function resolveProfilePath(arg, cwd = process.cwd()) {
   throw new Error(
     `runtime profile not found: ${nested}\n` +
       `no ${PROFILE_RELPATH} in the project root — ` +
-      `plant a minimal profile with de-novo-skills init ${arg ?? '.'}`
+      `plant a minimal profile with de-novo skills init ${arg ?? '.'}`
   );
 }
 
@@ -86,9 +86,14 @@ export function containerState(container) {
     container,
   ]);
   if (result.status !== 0) return { ready: false, label: 'missing' };
-  const [running, health] = result.stdout.trim().split('|');
-  const ready = running === 'true' && (health === '' || health === 'healthy');
-  return { ready, label: health || (running === 'true' ? 'running' : 'stopped') };
+  return stateFromInspect(result.stdout);
+}
+
+export function stateFromInspect(output) {
+  const [running, health = ''] = String(output).trim().split('|');
+  const ready = running === 'true' && health === 'healthy';
+  const label = health || (running === 'true' ? 'healthcheck missing' : 'stopped');
+  return { ready, label };
 }
 
 // Shared body for the CLI and direct execution. Returns an exit code.
@@ -126,13 +131,11 @@ export function runSetup(pathArg) {
   const readyCount = states.filter((s) => s.ready).length;
   const engineLine = states.map((s) => `${s.service}(${s.label})`).join(' ');
 
-  const urls = [];
   let provisioned = 0;
   for (const { engine, name } of plan.provisions) {
     const result = run('bash', [PROVISION, engine, name]);
     if (result.status === 0) {
       provisioned += 1;
-      urls.push(result.stdout.trim().split('\n').at(-1));
     } else {
       console.error(`provision ${engine} ${name} failed:\n${result.stderr}`);
     }
@@ -142,8 +145,7 @@ export function runSetup(pathArg) {
   console.log(`\n■ ${plan.slug}${nsSuffix} — machine-shared infra ready`);
   console.log(`  engines  ${readyCount}/${plan.services.length}: ${engineLine}`);
   if (plan.provisions.length > 0) {
-    console.log(`  DBs      ${provisioned}/${plan.provisions.length}${urls.length ? ':' : ''}`);
-    for (const url of urls) console.log(`           ${url}`);
+    console.log(`  DBs      ${provisioned}/${plan.provisions.length}`);
   }
   for (const note of plan.notes) console.log(`  note     ${note}`);
 
@@ -162,7 +164,14 @@ function isMain() {
 
 if (isMain()) {
   try {
-    process.exit(runSetup(process.argv[2]));
+    const args = process.argv.slice(2);
+    if (args.length > 1) {
+      throw new Error(`unexpected argument ${JSON.stringify(args[1])}`);
+    }
+    if (args[0]?.startsWith('--')) {
+      throw new Error(`unknown option ${JSON.stringify(args[0])}`);
+    }
+    process.exit(runSetup(args[0]));
   } catch (error) {
     console.error(`setup: ${error.message}`);
     process.exit(1);

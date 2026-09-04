@@ -9,10 +9,9 @@ an engine-internal unit, not a port:
 
 | Engine   | Isolation unit                       | How to create                       |
 | -------- | ------------------------------------ | ----------------------------------- |
-| MySQL    | database + dedicated account         | `bin/provision mysql <slug>`        |
-| Postgres | database + dedicated role            | `bin/provision pg <slug>`           |
+| MySQL    | database + dedicated account         | `de-novo skills infra provision mysql <slug>` |
+| Postgres | database + dedicated role            | `de-novo skills infra provision pg <slug>` |
 | Redis    | key prefix `<slug>:` (default)       | convention — set the prefix in app config |
-|          | or logical DB number (0–15)          | write the number in the registry below |
 | Kafka    | topic and consumer-group prefix `<slug>.` | convention                     |
 | Mongo    | database                             | created on first connect            |
 | MinIO    | bucket `<slug>-*`                    | console or mc                       |
@@ -25,25 +24,34 @@ character rules (`-` / `_`) are rewritten by the setup tool.
 The project boundary is GRANT: an account may only touch its own database.
 root/postgres accounts are for provisioning, not app connections.
 
+Hostnames are not ports. This checkout's TLD and scheme live in
+[`addressing.yml`](addressing.yml). A clone-specific domain is
+`addressing.local.yml` (gitignored). Consuming projects inherit that tld when
+their profile omits `addressing.tld`. `de-novo skills urls` prints the names.
+
+The engine catalog is this compose file. Engine id is the compose profile.
+`grove.provision` / `grove.aliases` labels teach the CLI; do not add a second
+list. A project starts only `data.engines`. `up` with no names starts nothing.
+
 ## Start
 
-The CLI (`npm install && npm link`, then `de-novo-skills`) is the front;
+The CLI (`npm install && npm link`, then `de-novo`) is the front;
 compose is the floor:
 
 ```bash
-de-novo-skills up              # default three (mysql pg redis)
-de-novo-skills up kafka        # add an optional engine
-de-novo-skills status          # per-engine status and ready count
-# same work: docker compose -f infra/docker-compose.yml [--profile kafka] up -d --wait
+de-novo skills infra status        # catalog, tld, ready n/n
+de-novo skills infra up mysql pg   # those compose engines
+de-novo skills setup <project>     # project's isolation units on this set
+# every engine is a profile. bare `docker compose up` starts none.
 ```
 
 `restart: unless-stopped`, so when the Docker engine (OrbStack / Docker
 Desktop) comes up at login, infra follows. "Start it every time" ends here.
 
-Success is artifacts, not exit code:
+Success is the counted healthy catalog, not exit code alone:
 
 ```bash
-docker compose -f infra/docker-compose.yml ps   # count healthy
+de-novo skills infra status        # ready n/n; every engine has a healthcheck
 ```
 
 ## Engines
@@ -52,9 +60,9 @@ All on 127.0.0.1, standard ports. Credentials are local-dev only.
 
 | Engine      | Container   | Connect                     | Profile |
 | ----------- | ----------- | --------------------------- | ------- |
-| MySQL 8.4   | dev-mysql8  | localhost:3306 (root/root)  | default |
-| Postgres 16 | dev-pg16    | localhost:5432 (postgres/…) | default |
-| Redis 7     | dev-redis7  | localhost:6379              | default |
+| MySQL 8.4   | dev-mysql8  | localhost:3306 (root/root)  | mysql   |
+| Postgres 16 | dev-pg16    | localhost:5432 (postgres/…) | pg      |
+| Redis 7     | dev-redis7  | localhost:6379              | redis   |
 | Kafka 3.9   | dev-kafka   | localhost:9092              | kafka   |
 | Mongo 7     | dev-mongo7  | localhost:27017             | mongo   |
 | Mailpit     | dev-mailpit | SMTP 1025 · UI 8025         | mail    |
@@ -64,37 +72,82 @@ From a container in a project compose, use `host.docker.internal:<port>`, or
 join the external network `dev-infra` and the container name (kafka:
 `dev-kafka:19092`).
 
+k3d / Kubernetes on the same Docker engine: engines bind `127.0.0.1`, so
+`host.k3d.internal:<port>` does **not** connect (measured: MySQL 2003/111).
+
+Two cluster names — do not mix them. `runtime.profiles.*.cluster` is the
+project's **app** cluster (often the existing `local` that already owns
+`:80`). `infra k3d connect --cluster NAME` is the **engine-link**. `--cluster`
+is required and never defaults to `local`. `--cluster local` warns, then
+continues only because a human passed it.
+
+Create a **separate** engine-link cluster on `dev-infra`, not the machine's
+existing one that already owns `:80`:
+
+```bash
+k3d cluster create grove-qa \
+  --network dev-infra \
+  --api-port 127.0.0.1:6550 \
+  --port '127.0.0.1:9080:80@loadbalancer' \
+  --kubeconfig-update-default=false
+```
+
+Then link engines (idempotent). Requires `--cluster`; will not pick `local`:
+
+```bash
+de-novo skills infra k3d connect --cluster grove-qa
+# apps: mysql.grove-infra:3306  pg.grove-infra:5432
+de-novo skills infra k3d status --cluster grove-qa
+# resources n/n; stale or missing Service/EndpointSlice makes status non-zero
+```
+
+`addressing.proxy: project`. Do not publish engine ports on `0.0.0.0`.
+
 Need a new major version? Run it beside the existing service (that is when a
 non-standard port appears) — other projects still live on the old version.
 
-## Project onboarding and registry
+## Project onboarding
 
 Which engines a project uses is its `.agents/runtime-profile.yml`
 (`data.engines`). Setup reads that yaml:
 
 ```bash
-de-novo-skills setup <project-root>   # start declared engines + provision DBs, idempotent
+de-novo skills setup <project-root>   # start declared engines + provision DBs, idempotent
 ```
 
-`de-novo-skills provision (mysql|pg) <name>` is the low-level tool setup
+`de-novo skills infra provision (mysql|pg) <name>` is the low-level tool setup
 uses — call it directly only when you need one DB in a hurry without a
-profile.
+profile. It prints a counted receipt without credentials. To override the
+local-development credential, pass it through `GROVE_PROVISION_PASSWORD`;
+positional password arguments are rejected so they do not enter shell history
+or process arguments.
 
-Database and account names are the project slug; several per project use
-`<slug>_<purpose>`.
+Database and account names come from the consuming project's
+`project.namespace` and `data.engines`; several per project use
+`<namespace>_<purpose>`. Do not copy that declaration into a second registry.
 
-Onboarding adds a line to a **local registry that is not in git** — which
-projects live on this machine is machine state, not this repo:
+## Overlay lifecycle
 
+Grove does not implement project workloads, but it owns their lifecycle gate
+and lease registry. An overlay-enabled project declares
+`runtime.commands.overlay`; operate it only through the CLI:
+
+```bash
+de-novo skills overlay status --project <project-root>
+de-novo skills overlay touch <env> --project <project-root>
+de-novo skills overlay prune --project <project-root>           # plan
+de-novo skills overlay prune --project <project-root> --apply   # destroy stale leases
 ```
-infra/registry.local.md        (.gitignore — this machine's split registry)
-```
 
-Shape (fictional example):
+The project chooses `overlay.stale_after`, or the operator supplies
+`--stale-after`. There is no default retention period and no implicit deletion.
+Failed destroys remain tracked and make the counted cleanup non-zero. Runtime
+environments absent from the registry are reported as drift and require an
+explicit `destroy`; Grove does not invent their age. Full contract:
+[`overlay-contract.md`](../skills/grove/references/overlay-contract.md).
 
-| Project | Engines      | namespace | Notes                   |
-| ------- | ------------ | --------- | ----------------------- |
-| acme    | mysql, redis | acme      | db+account acme, prefix acme: |
+This cleanup targets project overlay workloads only. It never stops or removes
+the machine-shared engines.
 
 ## Rules (not weakenable)
 
@@ -114,5 +167,5 @@ gradually. If the old stack used non-standard ports, it can run next to
 machine infra (standard ports) without colliding. Steps: (1) `provision` a
 database (2) point app config at machine infra (3) migrate data (4) remove
 infra services from the project stack. While both exist, "which one am I
-looking at?" is the app config — do not guess. Per-project migration state
-goes in `registry.local.md`.
+looking at?" is the app config — do not guess. Record the ownership value in
+that project's `.agents/runtime-profile.yml`.

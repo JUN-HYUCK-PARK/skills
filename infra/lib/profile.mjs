@@ -2,6 +2,7 @@
 // data.infra: project is parsed too — separate from setup requiring machine.
 import { parse } from 'yaml';
 
+import { assertScheme, assertTld } from './addressing.mjs';
 import { ALIASES, ENGINES } from './engines.mjs';
 
 export const TOP_LEVEL_KEYS = Object.freeze([
@@ -17,25 +18,54 @@ export const TOP_LEVEL_KEYS = Object.freeze([
 const NS_PATTERN = /^[a-z][a-z0-9_-]*$/;
 const DB_NAME_PATTERN = /^[a-z][a-z0-9_]*$/;
 const DNS_LABEL = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/;
-const SCHEME_TOKEN = /\{([a-z]+)\}/g;
-const SCHEME_TOKENS = new Set(['service', 'env', 'project', 'tld', 'namespace']);
 const PROXY_VALUES = new Set(['none', 'machine', 'project', 'portless']);
+const INFRA_VALUES = new Set(['machine', 'project']);
+const PROFILE_VERSION = 1;
+const VALIDATED_INVARIANTS = Object.freeze([
+  'schema',
+  'single_stack',
+  'writers',
+  'forbid_direct_db_writes',
+  'engines',
+]);
 
 function fail(source, message) {
   throw new Error(`${source}: ${message}`);
 }
 
+function isMap(value) {
+  return value != null && typeof value === 'object' && !Array.isArray(value);
+}
+
+function assertOnlyKeys(value, allowed, field, source) {
+  for (const key of Object.keys(value)) {
+    if (!allowed.includes(key)) {
+      fail(source, `${field} has unknown key ${JSON.stringify(key)}.`);
+    }
+  }
+}
+
+function nonEmptyString(value, field, source) {
+  if (typeof value !== 'string' || value.length === 0) {
+    fail(source, `${field} must be a non-empty string.`);
+  }
+  return value;
+}
+
 function databasesOf(value, dbNamespace, engine, source) {
   const names = value === true ? [dbNamespace] : Array.isArray(value) ? value : null;
-  if (!names) {
+  if (!names || names.length === 0) {
     fail(source, `data.engines.${engine} must be true or a list of database names.`);
   }
   for (const name of names) {
-    if (typeof name !== 'string' || !DB_NAME_PATTERN.test(name)) {
+    if (typeof name !== 'string' || name.length > 63 || !DB_NAME_PATTERN.test(name)) {
       fail(source, `database name must match [a-z][a-z0-9_]* — ${JSON.stringify(name)}`);
     }
   }
-  return names;
+  if (new Set(names).size !== names.length) {
+    fail(source, `data.engines.${engine} has duplicate database names.`);
+  }
+  return [...names];
 }
 
 function parseEngines(raw, namespace, source) {
@@ -50,26 +80,71 @@ function parseEngines(raw, namespace, source) {
     if (!(canon in ENGINES)) {
       fail(source, `unknown engine "${key}" — supported: ${Object.keys(ENGINES).join(', ')}`);
     }
+    if (canon in engines) {
+      fail(source, `engine ${JSON.stringify(canon)} is declared more than once (including aliases).`);
+    }
     switch (canon) {
       case 'mysql':
       case 'pg':
       case 'mongo':
         engines[canon] = { databases: databasesOf(value, dbNamespace, key, source) };
         break;
-      case 'redis':
-        engines.redis = { prefix: (value === true ? null : value?.prefix) ?? `${namespace}:` };
+      case 'redis': {
+        if (value === true) {
+          engines.redis = { prefix: `${namespace}:` };
+          break;
+        }
+        if (!isMap(value)) {
+          fail(source, 'data.engines.redis must be true or { prefix: string }.');
+        }
+        assertOnlyKeys(value, ['prefix'], 'data.engines.redis', source);
+        engines.redis = {
+          prefix: nonEmptyString(value.prefix, 'data.engines.redis.prefix', source),
+        };
         break;
-      case 'kafka':
+      }
+      case 'kafka': {
+        if (value === true) {
+          engines.kafka = { topicPrefix: `${namespace}.` };
+          break;
+        }
+        if (!isMap(value)) {
+          fail(source, 'data.engines.kafka must be true or { topic_prefix: string }.');
+        }
+        assertOnlyKeys(value, ['topic_prefix'], 'data.engines.kafka', source);
         engines.kafka = {
-          topicPrefix: (value === true ? null : value?.topic_prefix) ?? `${namespace}.`,
+          topicPrefix: nonEmptyString(
+            value.topic_prefix,
+            'data.engines.kafka.topic_prefix',
+            source
+          ),
         };
         break;
-      case 'minio':
-        engines.minio = {
-          bucket: (value === true ? null : value?.bucket) ?? namespace.replaceAll('_', '-'),
-        };
+      }
+      case 'minio': {
+        const bucket = value === true
+          ? namespace.replaceAll('_', '-')
+          : isMap(value)
+            ? value.bucket
+            : null;
+        if (isMap(value)) assertOnlyKeys(value, ['bucket'], 'data.engines.minio', source);
+        if (
+          typeof bucket !== 'string' ||
+          bucket.length < 3 ||
+          bucket.length > 63 ||
+          !/^[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?$/.test(bucket)
+        ) {
+          fail(source, 'data.engines.minio must be true or { bucket: lowercase-name }.');
+        }
+        engines.minio = { bucket };
+        break;
+      }
+      case 'mail':
+        if (value !== true) fail(source, 'data.engines.mail must be true.');
+        engines.mail = {};
         break;
       default:
+        if (value !== true) fail(source, `data.engines.${key} must be true.`);
         engines[canon] = {};
     }
   }
@@ -85,20 +160,15 @@ function assertDnsLabel(value, source, field) {
   }
 }
 
-function assertScheme(value, field, source) {
-  if (typeof value !== 'string') {
-    fail(source, `addressing.scheme.${field} must be a string.`);
-  }
-  for (const match of value.matchAll(SCHEME_TOKEN)) {
-    if (!SCHEME_TOKENS.has(match[1])) {
-      fail(source, `addressing.scheme.${field} has unknown token {${match[1]}}`);
-    }
-  }
-}
-
 function parseOverlay(doc, serviceNames, source) {
-  const command =
-    typeof doc?.runtime?.commands?.overlay === 'string' ? doc.runtime.commands.overlay : null;
+  const configuredCommand = doc?.runtime?.commands?.overlay;
+  if (
+    configuredCommand != null &&
+    (typeof configuredCommand !== 'string' || configuredCommand.trim().length === 0)
+  ) {
+    fail(source, 'runtime.commands.overlay must be a non-empty string.');
+  }
+  const command = configuredCommand ?? null;
   const raw = doc?.overlay;
   if (raw == null) {
     if (command) fail(source, 'runtime.commands.overlay requires an overlay block.');
@@ -111,6 +181,12 @@ function parseOverlay(doc, serviceNames, source) {
   if (typeof raw !== 'object' || Array.isArray(raw)) {
     fail(source, 'overlay must be none or an object.');
   }
+  assertOnlyKeys(
+    raw,
+    ['attachable', 'shared_only', 'plan_first', 'image_tag', 'stale_after'],
+    'overlay',
+    source
+  );
   const attachable = raw.attachable;
   if (!Array.isArray(attachable) || attachable.length === 0) {
     fail(source, 'overlay.attachable must be a non-empty list.');
@@ -120,12 +196,24 @@ function parseOverlay(doc, serviceNames, source) {
       fail(source, `overlay.attachable names a missing service ${JSON.stringify(name)}`);
     }
   }
-  const sharedOnly = Array.isArray(raw.shared_only) ? raw.shared_only : [];
+  if (new Set(attachable).size !== attachable.length) {
+    fail(source, 'overlay.attachable has duplicate service names.');
+  }
+  if (raw.shared_only != null && !Array.isArray(raw.shared_only)) {
+    fail(source, 'overlay.shared_only must be a list.');
+  }
+  const sharedOnly = raw.shared_only ?? [];
   for (const name of sharedOnly) {
     if (typeof name !== 'string') fail(source, 'overlay.shared_only entries must be strings.');
+    if (!serviceNames.has(name)) {
+      fail(source, `overlay.shared_only names a missing service ${JSON.stringify(name)}`);
+    }
     if (attachable.includes(name)) {
       fail(source, `overlay.shared_only overlaps attachable: ${name}`);
     }
+  }
+  if (new Set(sharedOnly).size !== sharedOnly.length) {
+    fail(source, 'overlay.shared_only has duplicate service names.');
   }
   let planFirst = true;
   if (raw.plan_first != null) {
@@ -134,6 +222,14 @@ function parseOverlay(doc, serviceNames, source) {
     }
     planFirst = raw.plan_first;
   }
+  const imageTag = raw.image_tag ?? 'full-git-sha';
+  if (imageTag !== 'full-git-sha') {
+    fail(source, 'overlay.image_tag must be full-git-sha.');
+  }
+  const staleAfter = raw.stale_after ?? null;
+  if (staleAfter != null && !/^[1-9][0-9]*(?:s|m|h|d|w)$/.test(staleAfter)) {
+    fail(source, 'overlay.stale_after must be a positive duration such as 12h or 7d.');
+  }
   return {
     mode: 'on',
     explicitNone: false,
@@ -141,7 +237,8 @@ function parseOverlay(doc, serviceNames, source) {
     sharedOnly,
     command,
     planFirst,
-    imageTag: raw.image_tag ?? null,
+    imageTag,
+    staleAfter,
   };
 }
 
@@ -162,14 +259,18 @@ function parseAddressing(raw, overlayOn, source) {
     if (typeof scheme !== 'object' || Array.isArray(scheme)) {
       fail(source, 'addressing.scheme must be a map.');
     }
-    if (scheme.shared != null) assertScheme(scheme.shared, 'shared', source);
-    if (scheme.overlay != null) assertScheme(scheme.overlay, 'overlay', source);
+    if (scheme.shared != null) {
+      assertScheme(scheme.shared, 'shared', source, ['service', 'tld']);
+    }
+    if (scheme.overlay != null) {
+      assertScheme(scheme.overlay, 'overlay', source, ['service', 'env', 'tld']);
+    }
   }
   if (overlayOn && !scheme?.overlay) {
     fail(source, 'overlay is an object but addressing.scheme.overlay is missing.');
   }
   return {
-    tld: typeof raw.tld === 'string' ? raw.tld : null,
+    tld: raw.tld == null ? null : assertTld(raw.tld, source, 'addressing.tld'),
     scheme,
     proxy,
     ports: raw.ports ?? null,
@@ -184,7 +285,10 @@ function parseServices(raw, source) {
   const services = {};
   for (const [name, spec] of Object.entries(raw)) {
     assertDnsLabel(name, source, 'services key');
-    services[name] = spec != null && typeof spec === 'object' && !Array.isArray(spec) ? spec : {};
+    if (!isMap(spec)) {
+      fail(source, `services.${name} must be a map.`);
+    }
+    services[name] = { ...spec };
   }
   return services;
 }
@@ -216,6 +320,24 @@ export function parseProfile(yamlText, source = 'runtime-profile.yml') {
     }
   }
 
+  if (doc.version != null && doc.version !== PROFILE_VERSION) {
+    fail(source, `version must be ${PROFILE_VERSION} (got ${JSON.stringify(doc.version)}).`);
+  }
+  if (!isMap(doc.project)) {
+    fail(source, 'project must be a map.');
+  }
+  if (doc.runtime != null && !isMap(doc.runtime)) {
+    fail(source, 'runtime must be a map.');
+  }
+  const data = doc.data == null ? {} : doc.data;
+  if (!isMap(data)) {
+    fail(source, 'data must be a map.');
+  }
+  const infra = data.infra ?? 'machine';
+  if (!INFRA_VALUES.has(infra)) {
+    fail(source, `data.infra must be machine|project — ${JSON.stringify(infra)}`);
+  }
+
   const slug = doc.project?.slug;
   if (typeof slug !== 'string' || !NS_PATTERN.test(slug)) {
     fail(source, 'project.slug is missing or malformed.');
@@ -235,7 +357,7 @@ export function parseProfile(yamlText, source = 'runtime-profile.yml') {
   );
   const writers = parseWriters(doc.runtime?.writers, source);
   const forbidDirectDbWrites = parseInvariantBool(
-    doc.data?.forbid_direct_db_writes,
+    data.forbid_direct_db_writes,
     true,
     'data.forbid_direct_db_writes',
     source
@@ -244,10 +366,10 @@ export function parseProfile(yamlText, source = 'runtime-profile.yml') {
   const services = parseServices(doc.services, source);
   const overlay = parseOverlay(doc, new Set(Object.keys(services)), source);
   const addressing = parseAddressing(doc.addressing, overlay.mode === 'on', source);
-  const engines = parseEngines(doc.data?.engines, namespace, source);
+  const engines = parseEngines(data.engines, namespace, source);
 
   return {
-    version: doc.version ?? null,
+    version: doc.version ?? PROFILE_VERSION,
     project: { slug, namespace, host },
     addressing,
     runtime: {
@@ -260,34 +382,41 @@ export function parseProfile(yamlText, source = 'runtime-profile.yml') {
     services,
     overlay,
     data: {
-      infra: doc.data?.infra ?? null,
-      enginesRaw: doc.data?.engines ?? null,
-      migrate: doc.data?.migrate ?? null,
-      fixtures: doc.data?.fixtures ?? null,
+      infra,
+      enginesRaw: data.engines ?? null,
+      migrate: data.migrate ?? null,
+      fixtures: data.fixtures ?? null,
       forbidDirectDbWrites,
     },
     engines,
   };
 }
 
-export function formatValidateReport(profile) {
+export function formatValidateReport(profile, resolvedAddressing = null) {
   const { overlay, addressing, project } = profile;
   let overlayLine;
   if (overlay.mode === 'off') {
     overlayLine = overlay.explicitNone ? 'inactive (overlay: none)' : 'inactive (omitted)';
   } else {
     const cmd = overlay.command ? 'command present' : 'command absent';
-    overlayLine = `active (attachable ${overlay.attachable.length}, shared_only ${overlay.sharedOnly.length}, ${cmd})`;
+    const stale = overlay.staleAfter
+      ? `stale_after ${overlay.staleAfter}`
+      : 'stale_after not configured';
+    overlayLine = `active (attachable ${overlay.attachable.length}, shared_only ${overlay.sharedOnly.length}, ${cmd}, ${stale})`;
   }
   let addrLine = 'omitted';
-  if (addressing) {
-    const tld = addressing.tld ?? '(machine default)';
+  if (resolvedAddressing) {
+    const scheme = resolvedAddressing.scheme?.shared ? 'scheme ok' : 'scheme omitted';
+    addrLine = `${scheme}, tld ${resolvedAddressing.tld} (${resolvedAddressing.tldSource}), proxy ${resolvedAddressing.proxy}`;
+  } else if (addressing) {
+    const tld = addressing.tld ?? '(inherited)';
     const scheme = addressing.scheme ? 'scheme ok' : 'scheme omitted';
     addrLine = `${scheme}, tld ${tld}, proxy ${addressing.proxy}`;
   }
+  const invariantCount = VALIDATED_INVARIANTS.length;
   return [
     `■ ${project.slug} — profile`,
-    `  invariants  5/5: single_stack writers forbid_direct_db_writes engines keys`,
+    `  invariants  ${invariantCount}/${invariantCount}: ${VALIDATED_INVARIANTS.join(' ')}`,
     `  overlay ${overlayLine}`,
     `  address   ${addrLine}`,
   ].join('\n');

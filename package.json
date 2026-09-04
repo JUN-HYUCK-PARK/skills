@@ -3,6 +3,7 @@
   "private": true,
   "type": "module",
   "bin": {
+    "de-novo": "./infra/bin/cli.mjs",
     "de-novo-skills": "./infra/bin/cli.mjs"
   },
   "scripts": {

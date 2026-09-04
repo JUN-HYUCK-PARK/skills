@@ -9,7 +9,7 @@ This checkout is a **skill catalog**, not a consuming app. Do not plant
 `.agents/runtime-profile.yml` here — that file belongs in projects that *use*
 Grove.
 
-Remote: `git@github.com:de-novo/skills.git`. Package and CLI: `de-novo-skills`.
+Remote: `git@github.com:de-novo/skills.git`. CLI: `de-novo skills` (alias `de-novo-skills`).
 
 ## Where facts live
 
@@ -18,9 +18,13 @@ Remote: `git@github.com:de-novo/skills.git`. Package and CLI: `de-novo-skills`.
 | Published skill (pattern) | `skills/<name>/SKILL.md` |
 | Human diagram / apply | `skills/<name>/README.md` |
 | Grove profile schema | `skills/grove/references/runtime-profile.md` |
-| Engines, ports, compose | `infra/` |
+| Grove addressing (this checkout) | `infra/addressing.yml` (+ `addressing.local.yml`, gitignored) |
+| Project addressing | that project's `.agents/runtime-profile.yml` (+ `.local.yml`) |
+| Engine catalog | `infra/docker-compose.yml` (profile = engine id; grove.* labels) |
+| Machine infra commands | `de-novo skills infra` (`infra/bin/cli.mjs`) |
 | CLI | `infra/bin/cli.mjs` |
 | Profile parse + invariants | `infra/lib/profile.mjs` only |
+| Hostname render | `infra/lib/addressing.mjs` |
 | How to work in this catalog | this file |
 | Agent skill load paths | `.agents/` (see `.agents/README.md`) |
 
@@ -72,7 +76,15 @@ Values may change. These may not.
   rejected in `infra/lib/profile.mjs`. Grove does not own browser QA or e2e.
 - **Overlay is opt-in.** Default `overlay: none`. Run overlay verbs only when
   `runtime.commands.overlay` exists.
-- **Proxy omit = `none`.** Do not default a listener onto `:80`.
+- **Proxy omit = `none`.** Do not default a listener onto `:80`. `urls`
+  prints names; this repo does not start Caddy. `proxy: machine` is intent.
+- **Addressing lives in repo files.** Not `~/.dev-infra`. Clone TLD is
+  `infra/addressing.local.yml` or the project's `.agents/runtime-profile.local.yml`.
+- **Compose is the engine catalog.** Do not keep a second name list. Machine
+  verbs are `de-novo skills infra`. `setup` provisions a project's isolation
+  units on that set. `infra up` with no names starts nothing. k3d links with
+  `infra k3d connect --cluster <name>` — never default to the existing `local`
+  cluster.
 - **One backend is not required.** k3d, compose, and this `infra/` are
   backends a profile may choose. The skill does not require them.
 
@@ -90,7 +102,7 @@ When you add a parser or CLI guard: revert the production change locally,
 confirm the new test goes red, restore, then commit. Report how many tests
 went red. A guard you have not seen fail is not a guard.
 
-`de-novo-skills validate <dir>` counts invariants with no docker. After
+`de-novo skills validate <dir>` counts invariants with no docker. After
 editing `infra/lib/profile.mjs` or examples, run it against
 `skills/grove/examples/`.
 
@@ -100,7 +112,7 @@ editing `infra/lib/profile.mjs` or examples, run it against
 rewrite container or network names, do not run shared migrations, and do not
 write shared databases. Declare the need; a human decides.
 
-There is no down command in `de-novo-skills`. That is intentional.
+There is no down command in `de-novo skills`. That is intentional.
 
 ## Paid-for in this catalog
 

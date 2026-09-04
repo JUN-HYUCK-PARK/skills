@@ -1,4 +1,5 @@
-# 머신 로컬 상태 — 레포 내용이 아니다
+# Clone-local values — not the catalog. Includes infra/addressing.local.yml
+# and a project's .agents/runtime-profile.local.yml.
 *.local.md
 *.local.yml
 

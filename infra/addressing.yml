@@ -1,0 +1,17 @@
+# Addressing for this Grove checkout. Yaml is source of truth; the CLI paints it.
+# Clone-specific TLD: addressing.local.yml next to this file (gitignored).
+# A consuming project inherits tld when its profile omits addressing.tld.
+# Pin a domain in that project repo with addressing.tld, or
+# .agents/runtime-profile.local.yml for one clone.
+#
+# tld: local.example.com  with scheme {service}.{project}.{tld}
+#   → web.acme.local.example.com          (*.*.local.example.com)
+#   → web--w1.acme.local.example.com      overlay stays two labels (--, not a dot)
+#
+# Public DNS *.local.example.com covers ONE extra label, not two.
+# Use *.acme.local.example.com per project, or a resolver for the whole subtree.
+
+tld: localhost
+scheme:
+  shared: "{service}.{project}.{tld}"
+  overlay: "{service}--{env}.{project}.{tld}"

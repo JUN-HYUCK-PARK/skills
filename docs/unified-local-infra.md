@@ -2,7 +2,16 @@
 
 Written in Korean during the original design loop. Current English docs:
 `skills/grove/README.md`, `skills/grove/SKILL.md`, `infra/README.md`.
-Command names in this file use `de-novo-skills`.
+Command names in current English docs use `de-novo skills`. This design
+file still says `de-novo-skills` in many places — same CLI.
+
+Shipped product: engines, profile, `urls` (prints names), and the overlay
+lifecycle dispatcher/lease registry. No Caddy or `proxy up`; overlay workloads
+and routing remain project commands. This file is design.
+
+Addressing is **in-repo yaml**, not `~/.dev-infra/config.yml`. This checkout:
+`infra/addressing.yml` (+ gitignored `infra/addressing.local.yml`). A consuming
+project: `.agents/runtime-profile.yml` (+ `.agents/runtime-profile.local.yml`).
 
 # Original title: 통합 로컬 개발 인프라
 
@@ -28,7 +37,7 @@ dev-infra는 이미 머신 공유 엔진 층(MySQL·PG·Redis·Kafka·Mongo·Mai
 
 ## Background & Motivation
 
-### 현재 구현 (코드 기준)
+### 설계 당시 구현 (역사 기록; 현재 제품 명세 아님)
 
 `de-novo-skills`의 이빨은 **엔진 층만** 있다.
 
@@ -1239,6 +1248,10 @@ HTTPS 내부 CA는 호스트 trust가 필요하다. `--https`는 안내 후 사�
 - **내용:** `~/.dev-infra/locks/{slug}.lock`, acquire/release/status, 죽은 pid 탈취, rename+pid. `agent`/`worktree` 소스 고정. 엔진 setup은 락을 요구하지 않음. `commands.up` 미차단. 스킬 세 줄은 PR 5.
 
 ### PR 5 — 오버레이 라우팅 제어면
+
+2026-09-04 구현 범위: 프로젝트 명령 dispatch, JSON 영수증, 원자적 lease
+registry, `status`/`touch`/`prune`까지 구현했다. Caddy·proxy route 생성과
+자동 복구 controller는 여전히 설계이며 구현됐다고 세지 않는다.
 
 - **제목:** `de-novo-skills overlay`: 레지스트리·폴스루·dispatch (`proxy` 모드별 성공)
 - **영향 파일:** `infra/lib/overlay.mjs`, `infra/lib/proxy.mjs` (fallthrough 병합은 기존 writer), `infra/bin/cli.mjs`, `infra/bin/overlay-stub.mjs` (신규 픽스처), `infra/bin/overlay.test.mjs`, `skills/grove/references/overlay-contract.md` (신규), `skills/grove/SKILL.md` (**세 줄**: writer, urls, `de-novo-skills overlay`만 — 프로젝트 명령 직접 호출 금지)

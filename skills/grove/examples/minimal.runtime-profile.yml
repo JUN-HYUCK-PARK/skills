@@ -7,9 +7,9 @@ project:
   slug: sideapp
 
 addressing:
-  tld: localhost                # *.localhost — no DNS setup, personal machine
+  tld: localhost                # pin in this project. omit to inherit Grove addressing.yml
   scheme:
-    shared: "{service}.{project}.{tld}"   # several projects on one machine
+    shared: "{service}.{project}.{tld}"   # web.sideapp.localhost
     # no overlay scheme — overlay: none
   ports:
     blocks: { api: 6000, web: 6100 }      # do not overlap other projects' blocks
@@ -36,7 +36,7 @@ overlay: none
 data:
   infra: machine              # engines on machine-shared infra — do not start them here
   engines:
-    pg: [sideapp]             # created by infra/bin/provision pg sideapp
+    pg: [sideapp]             # created by `de-novo skills setup` from this declaration
     redis: { prefix: "sideapp:" }
   migrate: pnpm run db:migrate
   fixtures: [seed-script]
