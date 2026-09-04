@@ -71,6 +71,11 @@ Values may change. These may not.
 - **Success is counted artifacts**, not exit 0. Print `engines n/n`,
   `invariants 5/5`, `DB n/n`. The runner prints the number — do not pin it
   in a document.
+- **Changed behavior is actually measured.** A change is not merge-ready until
+  the path it changes has been executed at the closest real, safe boundary.
+  Unit tests, mocks, config rendering, and exit zero are supporting evidence;
+  none substitutes for executing the changed behavior. `notMeasured` may name
+  an untouched boundary, never the behavior introduced or modified by the PR.
 - **Profile whitelist.** Top-level keys are `version` `project` `addressing`
   `runtime` `services` `overlay` `data`. Unknown keys (including `qa`) are
   rejected in `infra/lib/profile.mjs`. Grove does not own browser QA or e2e.
@@ -97,6 +102,13 @@ npm test          # node --test infra/bin/
 The runner prints how many tests ran. Docker is not required for validate /
 init tests. Do not start or stop shared engines to land a docs or parser
 change.
+
+Every PR must preserve its execution evidence in the PR description. Record
+the candidate SHA and target, the exact commands that ran, the observed and
+counted result, and any skipped boundary. "Tests pass" without the command and
+result is not evidence. If the changed path needs shared-infra authority, get
+the human gate and keep the PR not ready to merge until that execution has
+been measured. Do not bypass the gate to manufacture evidence.
 
 When you add a parser or CLI guard: revert the production change locally,
 confirm the new test goes red, restore, then commit. Report how many tests
