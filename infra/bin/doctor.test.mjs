@@ -44,7 +44,7 @@ test('the package names its version and the Node range the suite runs on; the pl
   assert.equal(pkg.engines.node, '>=24');
   const plugin = JSON.parse(readFileSync(path.join(CATALOG, '.claude-plugin/plugin.json'), 'utf8'));
   assert.equal(plugin.version, pkg.version, 'plugin manifest version equals package version');
-  assert.equal(publishedSkills(CATALOG).length, 7);
+  assert.equal(publishedSkills(CATALOG).length, 1);
 });
 
 test('doctor outside a project reports the catalog and says how to get a project; stdout is JSON alone', (t) => {
@@ -72,7 +72,7 @@ test('doctor reads a project\'s values files, tells missing from invalid, names 
   const root = realpathSync(mkdtempSync(path.join(tmpdir(), 'doctor-project-')));
   t.after(() => rmSync(root, { recursive: true, force: true }));
   const project = path.join(root, 'project');
-  mkdirSync(path.join(project, '.agents/skills/seat'), { recursive: true });
+  mkdirSync(path.join(project, '.agents/skills/ground'), { recursive: true });
   const stateDir = path.join(root, 'state');
   mkdirSync(path.join(stateDir, 'plans'), { recursive: true });
   writeFileSync(path.join(stateDir, 'plans/machine.yml'), 'version: 1\nparallel: 3\n');
@@ -83,7 +83,7 @@ test('doctor reads a project\'s values files, tells missing from invalid, names 
   writeFileSync(path.join(project, '.agents/plan.yml'), 'version: 1\ntasks:\n  a: { task: x }\n');
   writeFileSync(path.join(project, '.agents/facts.yml'), 'version: 1\ndomains: [sample]\ntypes: [item]\npredicates:\n  uses: many\n');
   // A skill copy that is not the catalog's text.
-  writeFileSync(path.join(project, '.agents/skills/seat/SKILL.md'), '---\nname: seat\n---\nold copy\n');
+  writeFileSync(path.join(project, '.agents/skills/ground/SKILL.md'), '---\nname: ground\n---\nold copy\n');
   const before = treeDigest(root);
 
   const report = await doctorReport({ project, environment, cwd: root });
@@ -93,21 +93,11 @@ test('doctor reads a project\'s values files, tells missing from invalid, names 
   assert.equal(report.project.ground.backend.state, 'missing');
   assert.deepEqual(report.project.ground.hostnames.shared.length, 1);
   assert.match(report.project.ground.hostnames.detail, /rendering is not resolving/);
-  assert.equal(report.project.seat.registry.state, 'ready');
-  assert.equal(report.project.seat.registry.seats, 0);
-  assert.equal(report.project.plan.plan.state, 'ready');
-  assert.equal(report.project.plan.local.state, 'missing');
-  assert.equal(report.project.plan.budget.state, 'missing');
-  assert.match(report.project.plan.budget.detail, /no budget/);
-  assert.equal(report.project.facts.values.state, 'ready');
-  assert.match(report.project.facts.values.detail, /permissive/);
-  assert.equal(report.project.herbarium.values.state, 'missing');
-  assert.deepEqual(report.project.skills.seat, [{ path: '.agents/skills/seat/SKILL.md', same_as_catalog: false }]);
-  assert.deepEqual(report.project.skills.ground, []);
-  assert.equal(report.catalog.machine_cap.parallel, 3);
-  assert.deepEqual(report.gates.map((gate) => gate.gate).filter((gate) => gate !== 'engine backend'), ['shared engines', 'fact commits']);
-  assert.ok(report.next.some((step) => /set parallel in/.test(step)));
-  assert.ok(report.next.some((step) => /seat \(\.agents\/skills\/seat\/SKILL\.md\)/.test(step)));
+  assert.deepEqual(report.project.skills.ground, [{ path: '.agents/skills/ground/SKILL.md', same_as_catalog: false }]);
+  assert.deepEqual(Object.keys(report.project).sort(), ['ground', 'root', 'skills']);
+  assert.equal('machine_cap' in report.catalog, false);
+  assert.deepEqual(report.gates.map((gate) => gate.gate).filter((gate) => gate !== 'engine backend'), ['shared engines']);
+  assert.ok(report.next.some((step) => /ground \(\.agents\/skills\/ground\/SKILL\.md\)/.test(step)));
   assert.equal(treeDigest(root), before, 'doctor wrote nothing under the project or the state directory');
 
   // An invalid values file is invalid, not missing, and exits 1 with its parser's words.
@@ -122,16 +112,16 @@ test('doctor reads a project\'s values files, tells missing from invalid, names 
   assert.match(spawnSync(process.execPath, [CLI, 'doctor', '--project', project], { cwd: root, env: environment, encoding: 'utf8' }).stdout, /ground\.profile invalid/);
 });
 
-test('capabilities lists the verbs, the seven skills with their invocation, and what it never does', () => {
+test('capabilities lists the verbs, Ground with its invocation, and what it never does', () => {
   const report = capabilitiesReport({ environment: process.env });
   assert.equal(report.schemaVersion, DOCTOR_SCHEMA);
-  assert.ok(report.verbs.includes('doctor') && report.verbs.includes('capabilities') && report.verbs.includes('plan'));
-  assert.deepEqual(report.skills.map((skill) => skill.name), ['clearing', 'facts', 'ground', 'herbarium', 'plan', 'seat', 'understory']);
-  assert.deepEqual(report.skills.filter((skill) => skill.invocation === 'user').map((skill) => skill.name), ['clearing', 'plan']);
+  assert.ok(report.verbs.includes('doctor') && report.verbs.includes('capabilities') && report.verbs.includes('overlay'));
+  assert.deepEqual(report.skills.map((skill) => skill.name), ['ground']);
+  assert.deepEqual(report.skills.filter((skill) => skill.invocation === 'user').map((skill) => skill.name), []);
   assert.ok(report.never.includes('seed trust'));
   const result = spawnSync(process.execPath, [CLI, 'capabilities', '--json'], { encoding: 'utf8' });
   assert.equal(result.status, 0);
   assert.equal(JSON.parse(result.stdout).catalog.package, 'de-novo-skills');
-  assert.match(spawnSync(process.execPath, [CLI, 'capabilities'], { encoding: 'utf8' }).stdout, /skills       clearing \(user\), facts \(model\)/);
+  assert.match(spawnSync(process.execPath, [CLI, 'capabilities'], { encoding: 'utf8' }).stdout, /skills       ground \(model\)/);
   assert.match(spawnSync(process.execPath, [CLI, 'doctor', '--bogus'], { encoding: 'utf8' }).stderr, /unknown argument "--bogus"/);
 });

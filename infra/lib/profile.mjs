@@ -68,6 +68,22 @@ function assertPort(value, field, source) {
   }
 }
 
+// Structural parsing also reads old profiles for migration. This gate decides
+// whether a profile is eligible to operate as a Ground application runtime.
+export function requireKubernetesRuntime(profile, source = 'runtime-profile.yml') {
+  const name = profile.runtime.default;
+  if (!name) fail(source, 'runtime.default must select a Kubernetes application profile.');
+  const selected = profile.runtime.profiles?.[name];
+  if (!selected || !['kubernetes', 'k8s', 'k3s', 'k3d'].includes(selected.backend)) {
+    fail(source, 'Ground requires a Kubernetes application backend (kubernetes|k8s|k3s|k3d).');
+  }
+  const context = selected.context;
+  if (typeof context !== 'string' || !context.trim() || context !== context.trim() || /[\r\n\0]/.test(context)) {
+    fail(source, `runtime.profiles.${name}.context must explicitly name the Kubernetes context.`);
+  }
+  return { name, backend: selected.backend, context };
+}
+
 function validateDocumentValues(doc, source) {
   assertOnlyKeys(doc.project, ['slug', 'namespace', 'host'], 'project', source);
   const runtime = doc.runtime ?? {};
@@ -280,7 +296,7 @@ function parseOverlay(doc, serviceNames, source) {
   if (staleAfter != null && !/^[1-9][0-9]*(?:s|m|h|d|w)$/.test(staleAfter)) {
     fail(source, 'overlay.stale_after must be a positive duration such as 12h or 7d.');
   }
-  // create_on: plan (default) creates the environment when a seat is planned;
+  // create_on: plan (default) creates the environment before the first attachment;
   // attach defers creation to the first applied attach, run from the caller's
   // worktree, for backends that bind an environment to a worktree revision.
   const createOn = raw.create_on ?? 'plan';
@@ -355,8 +371,15 @@ function parseServices(raw, source) {
     if (!isMap(spec)) {
       fail(source, `services.${name} must be a map.`);
     }
-    assertOnlyKeys(spec, ['kind', 'port', 'health', 'reflect'], `services.${name}`, source);
+    assertOnlyKeys(spec, ['kind', 'port', 'health', 'reflect', 'kubernetes'], `services.${name}`, source);
     optionalString(spec.kind, `services.${name}.kind`, source);
+    if(spec.kubernetes!=null) {
+      optionalMap(spec.kubernetes,['service','port'],`services.${name}.kubernetes`,source);
+      assertDnsLabel(spec.kubernetes.service,source,`services.${name}.kubernetes.service`);
+      if(typeof spec.kubernetes.port==='string') assertDnsLabel(spec.kubernetes.port,source,`services.${name}.kubernetes.port`);
+      else assertPort(spec.kubernetes.port,`services.${name}.kubernetes.port`,source);
+    }
+
     if (spec.port != null) assertPort(spec.port, `services.${name}.port`, source);
     if (spec.health != null) {
       nonEmptyString(spec.health, `services.${name}.health`, source);

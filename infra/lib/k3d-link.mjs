@@ -173,6 +173,7 @@ export function compareK3dLinks({ links, services = [], endpointSlices = [] }) {
   return { ready, total: links.length, drift };
 }
 
+// Existing cluster membership labels stay stable across the scope reduction.
 export const JOIN_LABEL = 'ground.seat/host';
 
 // A hostname becomes a label value. Dots stay, so a name like host.local is kept.
@@ -218,7 +219,7 @@ export function compareK3dJoin({ nodes, services, engines, host }) {
 
 export function formatK3dJoinReport({ cluster, host, compared }) {
   const lines = [
-    `■ cluster seat (k3d) — ${cluster}`,
+    `■ ground (k3d) — ${cluster}`,
     `  nodes    ${compared.nodesReady}/${compared.nodesTotal}`,
     `  member   ${host} ${compared.member}/${compared.nodesTotal}`,
     `  engines  ${compared.enginesReady}/${compared.enginesTotal}`,
@@ -266,7 +267,7 @@ export function formatK3dLinkReport({
   const linked = links.length;
   const known = linked + skipped.length;
   const lines = [
-    `■ cluster seat (k3d) — ${cluster}`,
+    `■ ground (k3d) — ${cluster}`,
     `  node     ${node}${nodeOnNetwork ? ` on ${network}` : ` not on ${network}`}`,
     `  engines  ${linked}/${known}${dryRun ? '  dry-run' : ''}`,
   ];

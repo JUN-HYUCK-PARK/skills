@@ -30,33 +30,19 @@ belong in it.
 | `skills/<name>/agents/openai.yaml` | Codex picker metadata: `interface.display_name`, `interface.short_description`; for a user-invoked skill also `policy.allow_implicit_invocation: false`. |
 | `.agents/skills/<name>` | Relative symlink to `../../skills/<name>`. |
 | `.claude-plugin/plugin.json` | The plugin manifest: every published skill in `skills`, nothing else. CI diffs the two. |
-| Root `README.md` Skills table | One-line index, grouped user-invoked / model-invoked. |
+| Root `README.md` | Published scope and onboarding entry point. |
 | `infra/addressing.yml` | This checkout's TLD and hostname scheme. Clone override: `addressing.local.yml`. |
 
 `name` in frontmatter equals the directory name.
 
-## Invocation
+## Scope and invocation
 
-Every skill is one of two:
+Ground is model-invoked and is the only published skill. Keep this catalog about
+local infrastructure and development environments. Do not add harness setup,
+agent configuration, task allocation, or session management.
 
-- **Model-invoked** (the default): a model or a person may reach for it.
-  The description is model-facing and keeps its trigger phrases ("Use
-  when…", `/name`). Ground, Seat, Understory, Facts: a seat reaches for
-  them on its own when its work meets them.
-- **User-invoked**: only a person typing `/name`. Frontmatter carries
-  `disable-model-invocation: true` and `agents/openai.yaml` carries
-  `policy.allow_implicit_invocation: false`; the two are always set
-  together or neither. The description is human-facing, one or two
-  sentences, no trigger list. Plan: the plan is a person's ask.
-
-A skill that tells the agent to run another skill says so as a tool call,
-one skill per call: `Call the Skill tool with "seat"`. A relative link
-(`[seat](../seat/SKILL.md)`) is router prose for a person and fires
-nothing. Nothing may name a user-invoked skill to the Skill tool; tell the
-person to run it instead. In a host with no Skill tool the same sentence
-means: read that skill's `SKILL.md` from the installed copy (a seat has
-Seat's path in `$SEAT_SKILL`; the others sit beside it) and follow it.
-That fallback is the root README's, stated once; skills do not repeat it.
+A user-invoked skill, if explicitly requested in future, needs both
+`disable-model-invocation: true` and `policy.allow_implicit_invocation: false`.
 
 ## Add a skill
 
@@ -71,7 +57,7 @@ That fallback is the root README's, stated once; skills do not repeat it.
 4. `ln -s ../../skills/<name> .agents/skills/<name>`
 5. Add the path to `.claude-plugin/plugin.json` `skills`, then
    `claude plugin validate . --strict`.
-6. Add one row to the root README Skills table, in its invocation group.
+6. Update the root README only if the approved scope changes.
 7. Public surfaces are English.
 8. If the skill has parser or CLI behavior in `infra/`, add tests under
    `infra/bin/` and revert the production change once to see the new test

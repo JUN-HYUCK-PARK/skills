@@ -1,0 +1,36 @@
+# Fictional named-access project. Measure every value before applying to an app.
+# Bootstrap the approved shared gateway once; the profile starts no listener.
+version: 1
+project:
+  slug: acme
+addressing:
+  proxy: portless
+  # Inherit ground.test, or set tld to this project's owned domain.
+runtime:
+  default: development
+  single_stack: true
+  writers: 1
+  profiles:
+    development:
+      backend: kubernetes
+      context: example-local
+      namespace: acme
+  commands:
+    # The project owns this existing deployment command and its manifests.
+    up: node tools/dev-environment.mjs up --apply
+    status: kubectl --context example-local --namespace acme get pods
+services:
+  web:
+    kind: web
+    health: /health
+    reflect: rebuild
+    kubernetes: { service: frontend, port: 8080 }
+  api:
+    kind: api
+    health: /health
+    reflect: rebuild
+    kubernetes: { service: api, port: http }
+overlay: none
+data:
+  infra: project
+  forbid_direct_db_writes: true

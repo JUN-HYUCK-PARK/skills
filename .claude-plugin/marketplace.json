@@ -1,14 +1,14 @@
 {
   "$schema": "https://www.schemastore.org/claude-code-marketplace.json",
   "name": "de-novo",
-  "description": "de-novo skills: shared local ground for many agents on one machine.",
+  "description": "Shared local infrastructure and simple project development environments.",
   "owner": {
     "name": "de-novo"
   },
   "plugins": [
     {
       "name": "de-novo-skills",
-      "description": "Ground, Seat, Plan, Understory, Facts.",
+      "description": "Ground: shared local infrastructure and project runtime values.",
       "source": "./",
       "category": "engineering"
     }

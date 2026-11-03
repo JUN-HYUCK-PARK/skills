@@ -1357,9 +1357,7 @@ function verifyFrontDoor(context, args) {
     {
       cwd: context.cwd,
       encoding: 'utf8',
-      // A verify run is a conformance probe, not seat work: it must not land
-      // in a seat journal.
-      env: { ...context.environment, SEAT_ID: '' },
+      env: context.environment,
     }
   );
   if (result.error) fail(`cannot run the Ground front door: ${result.error.message}`);
@@ -1752,7 +1750,7 @@ export function runOverlayLifecycle({
   assertOverlayActive(profile);
   const projectRoot = projectRootFromProfile(profilePath);
   // The project command runs with cwd = project root; the caller's own
-  // directory (a seat worktree, usually) reaches it as GROUND_CALLER_CWD so an
+  // directory (a development worktree, usually) reaches it as GROUND_CALLER_CWD so an
   // adapter can default its worktree argument without a passthrough flag.
   environment = { ...environment, GROUND_CALLER_CWD: safeRealpath(cwd) };
   switch (options.verb) {

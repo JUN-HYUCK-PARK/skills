@@ -16,7 +16,7 @@ npm test          # tests n, pass n, fail 0
 | --- | --- |
 | <!-- every new parser or CLI guard --> | |
 
-Real boundary: <!-- the sandbox arc, a real seat, a real slug; what was observed and counted -->
+Real boundary: <!-- the affected CLI command, a real app request, or an isolated process boundary; what was observed and counted -->
 
 Not measured: <!-- an untouched boundary, never the behavior this PR introduces -->
 

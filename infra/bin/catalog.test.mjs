@@ -25,7 +25,7 @@ const published = readdirSync(SKILLS, { withFileTypes: true })
   .sort();
 
 test('every published skill is named after its directory and has a description', () => {
-  assert.equal(published.length, 7, `expected the seven skills the root README names, found ${published.length}`);
+  assert.deepEqual(published, ['ground']);
   for (const name of published) {
     const fm = frontmatter(path.join(SKILLS, name, 'SKILL.md'));
     assert.equal(fm.name, name, `${name}: frontmatter name is ${JSON.stringify(fm.name)}`);
@@ -64,6 +64,5 @@ test('a skill is user-invoked in both harnesses or in neither', () => {
       assert.doesNotMatch(fm.description, /Use when|when the user runs/, `${name}: a user-invoked description is human-facing and carries no trigger list`);
     }
   }
-  // Plan and Clearing are the skills a person triggers; the rest a seat reaches for.
-  assert.deepEqual(userInvoked, ['clearing', 'plan']);
+  assert.deepEqual(userInvoked, []);
 });

@@ -205,7 +205,15 @@ test('de-novo skills urls prints counted hosts for the minimal example', () => {
   const result = spawnSync(process.execPath, [CLI, 'urls', MINIMAL], { encoding: 'utf8' });
   assert.equal(result.status, 0, result.stderr);
   assert.match(result.stdout, /shared {3}2\/2/);
-  assert.match(result.stdout, /api\.sideapp\.localhost/);
-  assert.match(result.stdout, /web\.sideapp\.localhost/);
-  assert.match(result.stdout, /tld {6}localhost/);
+  assert.match(result.stdout, /api\.sideapp\.ground\.test/);
+  assert.match(result.stdout, /web\.sideapp\.ground\.test/);
+  assert.match(result.stdout, /tld {6}ground\.test/);
+});
+
+
+test('an unconfigured catalog falls back to ground.test without overriding project domains', () => {
+  const profile = parseProfile('project: {slug: fallback}\nservices: {web: {}}\n');
+  const addressing = resolveAddressing(profile, { infraDir: groundDir({}) });
+  assert.equal(addressing.tld, 'ground.test');
+  assert.equal(renderProjectUrls(profile, addressing).shared[0].host, 'web.fallback.ground.test');
 });

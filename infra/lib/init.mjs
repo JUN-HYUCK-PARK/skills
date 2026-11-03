@@ -50,21 +50,30 @@ export function resolveServicesFlag(names) {
   return names;
 }
 
+function infraChoice(value) {
+  if (value !== 'machine' && value !== 'project') {
+    throw new Error(`infra must be machine|project — ${JSON.stringify(value)}`);
+  }
+  return value;
+}
+
 export function parseInitArgs(args) {
   let root;
-  const opts = { slug: null, engines: [], services: [], force: false };
+  const opts = { slug: null, engines: [], services: [], infra: 'machine', context: null, force: false };
   for (let i = 0; i < args.length; i += 1) {
     const arg = args[i];
     if (arg === '--force') {
       opts.force = true;
       continue;
     }
-    if (arg === '--slug' || arg === '--engines' || arg === '--services') {
+    if (arg === '--slug' || arg === '--engines' || arg === '--services' || arg === '--infra' || arg === '--context') {
       const value = args[i + 1];
       if (value == null || value.startsWith('--')) {
         throw new Error(`${arg} needs a value.`);
       }
       i += 1;
+      if (arg === '--context') opts.context = value;
+      if (arg === '--infra') opts.infra = infraChoice(value);
       if (arg === '--slug') opts.slug = value;
       if (arg === '--engines') opts.engines = parseCsv(value);
       if (arg === '--services') opts.services = parseCsv(value);
@@ -81,10 +90,11 @@ export function parseInitArgs(args) {
   return { root: root ?? '.', ...opts };
 }
 
-export function renderInitYaml({ slug, engines = [], services = [] }) {
+export function renderInitYaml({ slug, engines = [], services = [], infra = 'machine', context = null }) {
   if (!SLUG.test(slug)) {
     throw new Error(`project.slug is missing or malformed — ${JSON.stringify(slug)}`);
   }
+  infraChoice(infra);
   const canonEngines = resolveEnginesFlag(engines);
   const canonServices = resolveServicesFlag(services);
   const lines = [
@@ -106,6 +116,13 @@ export function renderInitYaml({ slug, engines = [], services = [] }) {
     '  writers: 1',
     '',
   ];
+  if (context != null) {
+    if (typeof context !== 'string' || !context.trim() || /[\r\n\0]/.test(context)) {
+      throw new Error('context must be a non-empty single-line Kubernetes context.');
+    }
+    lines.push('  default: development', '  profiles:', '    development:',
+      '      backend: kubernetes', `      context: ${JSON.stringify(context)}`, '');
+  }
   if (canonServices.length > 0) {
     lines.push('services:');
     for (const name of canonServices) {
@@ -113,7 +130,7 @@ export function renderInitYaml({ slug, engines = [], services = [] }) {
     }
     lines.push('');
   }
-  lines.push('overlay: none', '', 'data:', '  infra: machine');
+  lines.push('overlay: none', '', 'data:', `  infra: ${infra}`);
   if (canonEngines.length === 0) {
     lines.push('  engines: {}');
   } else {
@@ -139,6 +156,8 @@ export function runInit(args, cwd = process.cwd()) {
     slug,
     engines: opts.engines,
     services: opts.services,
+    infra: opts.infra,
+    context: opts.context,
   });
   const file = path.join(root, PROFILE_RELPATH);
   if (existsSync(file) && !opts.force) {
@@ -155,6 +174,6 @@ export function runInit(args, cwd = process.cwd()) {
   console.log(`  apps     ${serviceCount} (services)`);
   console.log(`  engines  ${engineCount} (data.engines)`);
   console.log(formatValidateReport(profile, addressing));
-  console.log('next: edit the profile, then de-novo skills validate and urls. Machine setup requires owner authorization; see the CLI checkout infra/README.md.');
+  console.log('next: confirm a Kubernetes context and configure host DNS; edit the profile, then de-novo skills validate and urls. Machine setup requires owner authorization; see the CLI checkout infra/README.md.');
   return 0;
 }

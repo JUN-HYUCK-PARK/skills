@@ -53,6 +53,8 @@ test('parseInitArgs splits root and flags', () => {
     slug: null,
     engines: [],
     services: [],
+    infra: 'machine',
+    context: null,
     force: false,
   });
   assert.deepEqual(parseInitArgs(['./app', '--slug', 'acme', '--engines', 'pg,redis', '--force']), {
@@ -60,6 +62,8 @@ test('parseInitArgs splits root and flags', () => {
     slug: 'acme',
     engines: ['pg', 'redis'],
     services: [],
+    infra: 'machine',
+    context: null,
     force: true,
   });
 });
@@ -97,7 +101,7 @@ test('de-novo skills init then validate is 5/5', () => {
   const root = tmpProject('init-cli');
   const init = spawnSync(
     process.execPath,
-    [CLI, 'init', root, '--slug', 'acme', '--services', 'api', '--engines', 'pg'],
+    [CLI, 'init', root, '--slug', 'acme', '--context', 'test-context', '--services', 'api', '--engines', 'pg'],
     { encoding: 'utf8' }
   );
   assert.equal(init.status, 0, init.stderr);
@@ -133,4 +137,26 @@ test('force validates clone-local addressing before replacing an existing profil
   );
   assert.throws(() => runInit(['--slug', 'acme', '--force'], root), /tld/);
   assert.equal(readFileSync(file, 'utf8'), 'keep\n');
+});
+
+test('init records the explicitly selected project infrastructure without choosing an app runtime', () => {
+  assert.deepEqual(parseInitArgs(['--infra', 'project', '--services', 'api']), { root: '.', slug: null, engines: [], services: ['api'], infra: 'project', context: null, force: false });
+  const profile = parseProfile(renderInitYaml({ slug: 'neutral', infra: 'project' }));
+  assert.equal(profile.data.infra, 'project');
+  assert.equal(profile.runtime.default, null);
+  assert.equal(profile.runtime.profiles, null);
+  assert.equal(profile.runtime.commands, null);
+  assert.equal(profile.overlay.mode, 'off');
+});
+
+test('init accepts an explicit machine infrastructure choice', () => {
+  assert.equal(parseInitArgs(['--infra', 'machine']).infra, 'machine');
+  const profile = parseProfile(renderInitYaml({ slug: 'shared', infra: 'machine', engines: ['pg'] }));
+  assert.equal(profile.data.infra, 'machine');
+  assert.deepEqual(profile.engines.pg.databases, ['shared']);
+});
+
+test('init rejects an unknown infrastructure choice before writing a profile', () => {
+  assert.throws(() => renderInitYaml({ slug: 'neutral', infra: 'k3d' }), /infra must be machine\|project/);
+  assert.throws(() => parseInitArgs(['--infra', 'k3d']), /infra must be machine\|project/);
 });

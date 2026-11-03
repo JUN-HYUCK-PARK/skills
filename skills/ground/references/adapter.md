@@ -124,7 +124,7 @@ environment (see the contract). The adapter's own obligations do not change:
 `create` stays idempotent, and `status` must show the environment afterwards.
 
 Leave the default (`plan`) when an environment can exist before any image is
-attached — it is simpler and lets whoever seats a worker create the
+attached — it is simpler and lets the runtime operator create the
 environment up front.
 
 ## 6. Run `overlay verify` until it is green
@@ -163,7 +163,7 @@ What the failures usually mean:
 | `destroy-observed` | something the environment owns outlived `destroy` |
 
 Run it after every change to the adapter, and once more against the real
-backend before any worker is seated on it. A red case is cheaper now than a
+backend before anyone depends on it. A red case is cheaper now than a
 pending operation in someone else's environment later.
 
 ## A worked shape

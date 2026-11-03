@@ -1,7 +1,7 @@
 {
   "name": "de-novo-skills",
   "version": "0.1.0",
-  "description": "Shared local ground for many agents on one machine: Ground (engines, names, overlays), Seat (seats), Plan (plan and budget), Understory (the written record), Facts (the assertion log).",
+  "description": "Shared local infrastructure and simple project development environments.",
   "author": {
     "name": "de-novo",
     "url": "https://github.com/de-novo"
@@ -10,19 +10,10 @@
   "license": "MIT",
   "keywords": [
     "skills",
-    "worktrees",
-    "parallel-agents",
     "local-environment",
-    "overlays",
-    "assertions"
+    "shared-infrastructure"
   ],
   "skills": [
-    "./skills/clearing",
-    "./skills/seat",
-    "./skills/plan",
-    "./skills/ground",
-    "./skills/herbarium",
-    "./skills/facts",
-    "./skills/understory"
+    "./skills/ground"
   ]
 }

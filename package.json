@@ -11,12 +11,13 @@
     "de-novo-skills": "./infra/bin/cli.mjs"
   },
   "scripts": {
-    "test": "node --test 'infra/bin/*.test.mjs'"
+    "test": "node --test 'infra/bin/*.test.mjs'",
+    "check:docs": "node scripts/check-docs.mjs",
+    "verify:dns": "node scripts/verify-dns.mjs",
+    "verify:access": "node scripts/verify-access.mjs"
   },
   "dependencies": {
+    "portless": "0.15.13",
     "yaml": "^2.5.0"
-  },
-  "optionalDependencies": {
-    "@lydell/node-pty": "^1.2.0-beta.15"
   }
 }

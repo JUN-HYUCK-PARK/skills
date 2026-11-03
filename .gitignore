@@ -9,3 +9,9 @@ node_modules/
 
 # Tool workspace pointers — clone-local, never the catalog.
 .haru.json
+
+# Generated local DNS service/resolver artifacts.
+infra/dns/*.local.*
+
+# Default clone-local Portless state includes private CA material.
+infra/portless.local/

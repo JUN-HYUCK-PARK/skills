@@ -119,7 +119,7 @@ test('formatK3dLinkReport counts linked engines', () => {
     skipped: [{ name: 'kafka', reason: 'not running' }],
     dryRun: true,
   });
-  assert.match(text, /cluster seat \(k3d\) — ground-qa/);
+  assert.match(text, /ground \(k3d\) — ground-qa/);
   assert.match(text, /engines {2}1\/2/);
   assert.match(text, /mysql 192\.168\.107\.2:3306/);
   assert.match(text, /kafka skipped/);

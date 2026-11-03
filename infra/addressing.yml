@@ -8,10 +8,10 @@
 #   → web.acme.local.example.com          (*.*.local.example.com)
 #   → web--w1.acme.local.example.com      overlay stays two labels (--, not a dot)
 #
-# Public DNS *.local.example.com covers ONE extra label, not two.
-# Use *.acme.local.example.com per project, or a resolver for the whole subtree.
+# TLS certificates cover one label per wildcard. DNS wildcard behavior follows
+# different rules; see lib/wildcards.mjs. Local DNS uses explicit project zones.
 
-tld: localhost
+tld: ground.test
 scheme:
   shared: "{service}.{project}.{tld}"
   overlay: "{service}--{env}.{project}.{tld}"

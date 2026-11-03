@@ -81,7 +81,7 @@ test('infra status prints Ground catalog and tld', () => {
   const result = spawnSync(process.execPath, [CLI, 'infra', 'status'], { encoding: 'utf8' });
   assert.equal(result.status, 0, result.stderr);
   assert.match(result.stdout, /ground — machine infra/);
-  assert.match(result.stdout, /tld {6}localhost/);
+  assert.match(result.stdout, /tld {6}ground\.test/);
   assert.match(result.stdout, /catalog {2}mysql pg redis kafka mongo mail minio/);
   assert.match(result.stdout, /ready {4}\d+\/7/);
 });
@@ -90,30 +90,6 @@ test('infra with no subcommand is status', () => {
   const result = spawnSync(process.execPath, [CLI, 'infra'], { encoding: 'utf8' });
   assert.equal(result.status, 0, result.stderr);
   assert.match(result.stdout, /ground — machine infra/);
-});
-
-test('seat, plan, and facts are the commands; retired names are unknown', () => {
-  for (const [command, marker] of [
-    ['seat', /Seat: worktree/],
-    ['plan', /plan plan/],
-    ['facts', /Facts: the assertion log/],
-  ]) {
-    const result = spawnSync(process.execPath, [CLI, command, '--help'], { encoding: 'utf8' });
-    assert.equal(result.status, 0, result.stderr);
-    assert.match(result.stdout, marker);
-  }
-  const help = spawnSync(process.execPath, [CLI, 'help'], { encoding: 'utf8' });
-  assert.match(help.stdout, /seat <verb>/);
-  assert.match(help.stdout, /plan <verb>/);
-  assert.match(help.stdout, /facts <verb>/);
-  assert.match(help.stdout, /plan plan/);
-  assert.doesNotMatch(help.stdout, /alias of/);
-  // Retired product verbs, spelled so this file does not keep the old words.
-  for (const former of ['gr' + 'ove', 'dr' + 'yad', 'for' + 'ester', 'my' + 'celium', 'ground']) {
-    const unknown = spawnSync(process.execPath, [CLI, former], { encoding: 'utf8' });
-    assert.notEqual(unknown.status, 0, former);
-    assert.match(unknown.stderr, new RegExp(`unknown command "${former}"`));
-  }
 });
 
 test('infra k3d connect requires --cluster', () => {

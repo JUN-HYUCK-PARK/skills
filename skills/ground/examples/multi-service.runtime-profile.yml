@@ -1,5 +1,5 @@
-# Multi-service tier: 4 backends + 3 webs, k3d overlay.
-# Names are fictional — this shows the shape of values.
+# Example choice: 4 backends + 3 webs on k3d with optional overlays.
+# Fictional values; k3d is this example's selection, not a recommendation.
 version: 1
 
 project:
@@ -21,12 +21,10 @@ runtime:
   single_stack: true
   writers: 1
   profiles:
-    planner:                    # light checks / planning
-      backend: docker-compose
-      compose_file: docker-compose.yml
-    developer:                  # development that needs overlay
+    developer:
       backend: k3d
-      cluster: local            # app cluster. Ground k3d connect never defaults to this
+      context: k3d-example-local
+      cluster: example-local
   commands:
     profile: node tools/dev-environment.mjs profile
     status: node tools/dev-environment.mjs status

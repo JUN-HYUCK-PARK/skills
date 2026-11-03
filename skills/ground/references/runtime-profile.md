@@ -23,7 +23,7 @@ addressing:
   # .agents/runtime-profile.local.yml for one clone. Not ~/.dev-infra.
   # tld: local.example.com
   # proxy: none                 # omitted = none. none|machine|project|portless
-                                # machine is intent — Ground does not start a listener
+                                # machine is intent; portless needs explicit machine bootstrap
   scheme:
     shared: "{service}.{project}.{tld}"     # web.acme.local.example.com
     overlay: "{service}--{env}.{project}.{tld}"
@@ -35,17 +35,16 @@ addressing:
     registry: README.md         # where the port registry lives. if this file disagrees, that file wins
 
 runtime:
-  default: developer
+  default: development
   single_stack: true            # invariant — cannot be false
   writers: 1                    # invariant — cannot grow
-  profiles:
-    planner:                    # light checks / planning
-      backend: docker-compose
-      compose_file: docker-compose.yml
-    developer:                  # development that needs overlay. omit if unused
-      backend: k3d
-      cluster: local            # this project's app cluster. not the Ground
-                                # `infra k3d connect --cluster` default
+  profiles:                    # names are project choices; apps require Kubernetes
+    development:
+      backend: kubernetes      # kubernetes | k8s | k3s | k3d
+      context: dev-cluster     # required explicit target for validate and dev
+      namespace: myproject    # required for named access
+      overlay_namespace: "{namespace}-{env}"  # named overlays only
+      # kubeconfig: /path/to/config  # optional; relative paths use the project root
   commands:                     # optional. init plants none. run only if present
     profile: node tools/dev-environment.mjs profile
     status: node tools/dev-environment.mjs status
@@ -58,11 +57,13 @@ services:
     port: 5001
     health: /api/health         # write a measured path. guessing yields 404
     reflect: rebuild            # source | rebuild | restart
+    kubernetes: {service: my-api, port: http}   # optional named-access mapping
   my-web:
     kind: web
     port: 5101
     health: /
     reflect: source
+    kubernetes: {service: my-web, port: 8080}
   auth-api:
     kind: api
     port: 5002
@@ -110,7 +111,8 @@ constraint on declarations, not runtime enforcement.
 ### addressing.proxy
 
 **Declared intent** for who would listen on this project's hostnames.
-Ground does not start a listener. `de-novo skills urls` prints the names.
+`urls` prints names only. An explicit Portless bootstrap can start the configured
+named-access listener; omission never starts one.
 Compose has no Caddy; the CLI has no `proxy up`.
 
 | Value | Meaning |
@@ -118,19 +120,47 @@ Compose has no Caddy; the CLI has no `proxy up`.
 | `none` (omit default) | Print URLs only |
 | `machine` | Intent: a machine listener would own these names. Not built. `urls` still prints |
 | `project` | The project (k3d Gateway, etc.) listens |
-| `portless` | Host process wrapper. Not machine fallthrough |
+| `portless` | Implemented named Kubernetes access through the explicit shared Portless gateway; `dev` owns route/forward cleanup |
 
 Projects whose k3d already binds `:80` must set `project` **explicitly**. If
 the default were `machine`, a future listener would steal that port.
 
-### addressing.tld — one namespace for many domains
+### Named access values
+
+These fields opt a project entrypoint into `dev`; none changes the profile's
+allowed top-level keys:
+
+A complete named-entrypoint example is kept in
+[named.runtime-profile.yml](../examples/named.runtime-profile.yml).
+
+
+`services.*.kubernetes` accepts only `service` and `port`. The service is a DNS
+label; the port is a valid port number or non-empty DNS-label port name. Existing
+`services.*.port` remains the project port registry value and is not used to
+allocate a host port. `dev` obtains an ephemeral port from kubectl automatically.
+The safe health path must be explicit before Ground makes a request.
+
+The selected runtime's `namespace` is required for named access. Its
+`overlay_namespace` template must contain `{env}`, may use `{namespace}`, and
+must render a different valid namespace. These backend fields describe the
+namespace the project's deployment/overlay command actually creates. They do
+not create Kubernetes resources themselves. `kubeconfig` paths are relative to
+the project root unless absolute. Ground gives child commands a temporary
+private, context-pinned config and removes it on normal exit.
+
+The shared gateway is an explicit machine opt-in with its own repo-local values.
+Its complete schema, commands, readiness and recovery are in
+[named access](../../../infra/access/README.md). No port is bound by profile
+parsing, name rendering, or a dev plan.
+
+### Domain configuration
 
 TLD is a **repo file**, not a home-directory setting. Precedence:
 
 1. `.agents/runtime-profile.local.yml` `addressing.tld` (this clone, gitignored)
 2. this profile `addressing.tld` (committed in the project)
 3. Ground checkout `infra/addressing.local.yml` (gitignored)
-4. Ground checkout `infra/addressing.yml` (default `localhost`)
+4. Ground checkout `infra/addressing.yml` (default `ground.test`)
 
 Default scheme is `{service}.{project}.{tld}`. With `tld: local.example.com`:
 
@@ -168,32 +198,57 @@ of these from this machine's resolver and names the rest as not measured;
 `.localhost` in particular is answered by some resolvers and clients and
 not others, so ask the one you use.
 
-| Method | Resolves | When |
+| Configuration | Example app name | Scope |
 | --- | --- | --- |
-| `localhost` (Ground default) | `*.localhost` → loopback where the OS resolver or the client does it (browsers do; `doctor --probe` says whether this machine's resolver does) | Personal machine, no external callbacks |
-| Owned `local.example.com` | You point DNS at 127.0.0.1 at the right depth (see the two rules above) | OAuth, phones, a domain you already own |
-| dnsmasq custom TLD | `/etc/resolver/` + dnsmasq subtree, every depth | No real domain and localhost fails in a tool |
+| Inherit the catalog default | `web.acme.ground.test` | Each project has a zone under the shared test suffix |
+| Set `tld: dev.example.com` in the catalog's local addressing file | `web.acme.dev.example.com` | All inheriting projects use an owned suffix |
+| Set `addressing.tld: product.example.org` in a project profile | `web.acme.product.example.org` | Only that project changes suffix |
+| Also choose shared scheme `{service}.{tld}` | `web.product.example.org` | That project exclusively owns the selected suffix |
 
-One TLD for the machine's projects. A new TLD per project multiplies certs
-and trust. Exclusive `tld` in a project profile is for a domain that project
-already monopolizes (OAuth allowlist).
+A project may choose a different domain independently. Its clone-local file can
+replace the committed choice without changing other projects. Domains use the
+same precedence for URLs and DNS generation; there is no separate DNS domain list.
+For exclusive domains with overlays, use overlay scheme `{service}--{env}.{tld}`
+so baseline and overlay names remain inside the same zone.
 
-### runtime.profiles — how to pick a tier
+`infra dns render` derives a zone after the service label, such as
+`acme.ground.test`, and maps it to that project's explicit ingress IPv4 address.
+It supports shared schemes beginning with `{service}.`; other layouts are
+refused rather than widening a wildcard to unrelated projects. Equal zones
+with different addresses are conflicts. More-specific nested zones retain their
+own rules in dnsmasq. Each zone gets a domain-specific host resolver artifact.
 
-```
-1–2 services, no parallel agents   → planner (compose) only. omit developer
-multi-service, parallel agents     → add developer. backend:
-  ships to k8s                     → k3d (reuse manifests)
-  otherwise                        → compose is enough; Ground prints names
-```
+A chosen owned domain changes local resolution only. It creates no public DNS
+record, verifies no registration ownership, and issues no TLS certificate.
+`localhost` can still be read in old profiles, but the DNS renderer rejects
+`localhost` and multicast `.local` zones. New DNS setup uses the configured test
+or owned suffix. Procedures and CLI: [local DNS](../../../infra/dns/README.md).
 
-`runtime.profiles.*.cluster` is the project's **app** cluster (where k8s apps
-run). Independent of `de-novo skills infra k3d connect --cluster NAME`, which
-never defaults to `local`. Create flags live in the CLI checkout's
-`infra/README.md`, not in the consuming project.
+### Environment choice
 
-The moment you add developer(k3d) you owe a SHA image-build pipeline. Decide
-if the project will pay that cost.
+Ground application workloads must run on Kubernetes. The selected profile needs
+`backend: kubernetes`, `k8s`, `k3s`, or `k3d`, and a non-empty explicit `context`.
+`runtime.default` selects that profile. `de-novo skills validate` refuses an
+unsupported backend or missing target; it does not contact the cluster.
+Structural parsing can still read old or incomplete profiles for migration, so
+parsing alone is not approval to operate one. Initialization without `--context`
+is a draft that must be completed before validation succeeds.
+
+The person confirms which eligible cluster to use or create. Do not infer that
+choice from the current context or installed software. OrbStack and other host
+providers may host Kubernetes, but a provider name alone does not satisfy the
+runtime requirement. Verify nodes, ingress, and Service DNS on the selected cluster.
+
+App execution and data ownership remain distinct. `data.infra: machine` uses
+this catalog's Compose engine set; `project` uses the project's own data backend.
+Adopting Kubernetes does not migrate, stop, or recreate existing shared engines.
+The dedicated `infra k3d` connector supports k3d-managed clusters only. Another
+Kubernetes/k3s installation needs its own measured path to those engines.
+
+Host app name resolution is required for named access. Portless handles active
+names and certificates during explicit gateway setup; projects with external
+ingress addresses may use [local DNS](../../../infra/dns/README.md). Choosing Kubernetes does
+not enable overlays; immutable image requirements belong to the opt-in overlay contract.
 
 ### overlay lifecycle
 
@@ -216,9 +271,14 @@ the public surface; ports stay in the registry.
 
 ### data.infra
 
-Default is `machine`: engines come from the Ground CLI's shared infra; the
-project declares only its databases and prefixes. Choose `project` when an
-existing or new project uses another backend and its own operating procedure.
+Confirm ownership independently of the app runtime and record it explicitly.
+`machine` means engines from this CLI's Compose catalog; `project` means the
+project's own data infrastructure and operating procedure. An app running on
+Kubernetes can use either choice.
+
+For compatibility, an existing profile that omits this field still means
+`machine`, and `init` without `--infra` retains that legacy default. New adoption
+must first confirm ownership and pass `init --infra machine|project`.
 It is a supported ownership choice, not a mandatory migration stage. Catalog
 `setup` applies only to `machine`; `validate`, `urls`, and overlay contracts
 remain available for either choice.
@@ -227,8 +287,7 @@ remain available for either choice.
 
 Every name that isolates this project on machine infra comes from here:
 database (`<ns>`), redis key prefix (`<ns>:`), kafka topic/group prefix
-(`<ns>.`), minio bucket, and if developer(k3d) is used, the app-layer k8s
-namespace. Per-engine declarations override this default only when needed.
+(`<ns>.`), minio bucket, and a project may reuse it for an app-layer Kubernetes namespace. Per-engine declarations override this default only when needed.
 
 Engines have different character rules; the setup tool rewrites them:
 database `-`→`_`, bucket/k8s `_`→`-`. To skip rewriting, start with

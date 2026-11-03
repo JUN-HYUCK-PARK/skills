@@ -4,9 +4,18 @@ The measured onboarding procedure. Pattern: [SKILL.md](../SKILL.md). The human p
 
 ## Apply to a project
 
+Required runtime: Kubernetes, including k3s or k3d. For named entrypoints, complete the explicit
+[gateway setup](../../../infra/access/README.md) and measure the public URL and cluster Service DNS.
+
 CLI install: `npm install && npm link` **in the Ground catalog checkout**,
 once per machine — not in the consuming app. The app gets a profile, not an
 `infra/` directory. Catalog layout: [root README](../../../README.md).
+
+First confirm the target Kubernetes context, app DNS suffix, ingress address,
+and data ownership using the
+[adoption questions](../SKILL.md#adopt-an-existing-environment). A recorded choice
+answers the question; installed software alone does not. Inspect existing setup
+while waiting, then proceed with configuration after the answers are settled.
 
 Start in the consuming repository: read its working rules, onboarding notes,
 and runtime ownership procedure. Keep a discovery record with the source
@@ -73,22 +82,17 @@ at the incomplete profile and report what is needed.
    their meaning and syntax. Check other listeners before proposing any new
    binding. Printed names alone do not prove a listener exists; record absent
    or unmeasured routing instead of claiming a proxy is running.
-7. **Decide whether overlays pay for themselves.** Establish whether parallel
-   workers actually need independently changed services, and whether the
-   project already supports isolated builds and routing. For a single service
-   with no parallel work, keep `overlay: none` and stop overlay preparation;
-   finish the ordinary profile checks below. Otherwise compare that need with
-   the cost of a project adapter. Leave overlays off until the project can
-   implement and measure the existing
-   [overlay contract](overlay-contract.md). Do not invent an adapter
-   command or enable overlays on the strength of a copied example.
+Keep `overlay: none` for ordinary onboarding. Consider the
+[overlay extension](overlay-contract.md) only when the project explicitly needs
+concurrent service instances and already has a suitable runtime.
 
 With the discovery record in hand:
 
-1. `de-novo skills init <project-root>` — writes a minimal `.agents/runtime-profile.yml`
+1. `de-novo skills init <project-root> --context <name> --infra <machine|project>` — writes a minimal `.agents/runtime-profile.yml`
    (`overlay: none`). Pass `--slug` `--engines` `--services` only for established
    values. Confirm the project identity in its own documentation before using
    its slug; if no identity is established, resolve that choice before init.
+   The flag records the confirmed data owner; it does not select the app runtime.
    Init plants no `runtime.commands`. Review the generated values against the
    record and fill only measured values using the schema above.
 2. `de-novo skills validate <project-root>` — counts invariants, no docker.
@@ -109,11 +113,6 @@ With the discovery record in hand:
    contract for execution and evidence, rather than treating exit zero as proof.
    Writing the project's own `runtime.commands.overlay` and checking it with
    `de-novo skills overlay verify`: [adapter.md](adapter.md).
-6. Make the skill loadable: in the project, keep one canonical copy under
-   `.agents/skills/ground` and put only symlinks in tool-specific dirs
-   (`.claude/skills/`, `.cursor/skills/`, …). For a user-wide install, symlink
-   from `~/.claude/skills/ground` to the catalog checkout. Never copy the body;
-   a copy stops receiving contract updates.
 
 Ongoing operating pattern: [SKILL.md](../SKILL.md).
 

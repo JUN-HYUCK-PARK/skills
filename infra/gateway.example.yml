@@ -1,0 +1,7 @@
+# Copy to gateway.local.yml and choose the listener explicitly after checking
+# existing owners. This file starts nothing. State contains CA private keys.
+port: 443
+https: true
+tlds: [ground.test]
+state_dir: ./portless.local
+# ca_file: ./portless.local/ca.pem   # optional Node probe trust anchor override

@@ -10,7 +10,7 @@ permissions:
 jobs:
   test:
     # Linux is the baseline; macOS is where the catalog is used day to day,
-    # so its worktree paths, resolver, and pseudo-terminals are run too.
+    # so its filesystem paths and resolver are run too.
     strategy:
       fail-fast: false
       matrix:
@@ -30,13 +30,19 @@ jobs:
       - name: Validate the compose catalog
         if: runner.os == 'Linux'
         run: docker compose -f infra/docker-compose.yml --profile '*' config --quiet
+      - name: Verify DNS in an isolated container
+        if: runner.os == 'Linux'
+        run: npm run verify:dns
+      - name: Verify named Kubernetes access in an isolated cluster
+        if: runner.os == 'Linux'
+        run: npm run verify:access
       - name: Look before anything runs
-        run: node infra/bin/cli.mjs doctor --json > /dev/null && node infra/bin/cli.mjs herbarium check
+        run: node infra/bin/cli.mjs doctor --json > /dev/null && npm run check:docs
       - name: Validate published examples
         run: |
           passed=0
           total=0
-          for profile in skills/grove/examples/*.runtime-profile.yml; do
+          for profile in skills/ground/examples/*.runtime-profile.yml; do
             total=$((total + 1))
             node infra/bin/cli.mjs validate "$profile"
             passed=$((passed + 1))

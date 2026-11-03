@@ -17,8 +17,11 @@ import {
   renderProjectUrls,
   resolveAddressing,
 } from '../lib/addressing.mjs';
+import { runDev } from '../lib/dev.mjs';
+import { runGateway } from '../lib/gateway.mjs';
+import { runDns } from '../lib/dns.mjs';
 import { runInit } from '../lib/init.mjs';
-import { formatValidateReport, parseProfile } from '../lib/profile.mjs';
+import { formatValidateReport, parseProfile, requireKubernetesRuntime } from '../lib/profile.mjs';
 import { COMPOSE_NETWORK, ENGINES, canonicalizeEngine } from '../lib/engines.mjs';
 import {
   JOIN_LABEL,
@@ -37,14 +40,7 @@ import {
   parseOverlayCliArgs,
   runOverlayLifecycle,
 } from '../lib/overlay.mjs';
-import { seatHelp, parseSeatCliArgs, recordSeatCliEvent, runSeat } from '../lib/seat.mjs';
 import { doctorHelp, runDoctor } from '../lib/doctor.mjs';
-import { runCanopy } from '../lib/canopy.mjs';
-import { planHelp, parsePlanCliArgs, runPlan } from '../lib/plan.mjs';
-import { parseUnderstoryCliArgs, runUnderstory, understoryHelp } from '../lib/understory.mjs';
-import { factsHelp, parseFactsCliArgs, runFacts } from '../lib/facts.mjs';
-import { herbariumHelp, parseHerbariumCliArgs, runHerbarium } from '../lib/herbarium.mjs';
-import { guardPlaygroundInvocation, runPlayground } from '../lib/playground.mjs';
 import {
   COMPOSE_FILE,
   COMPOSE_UP_FLAGS,
@@ -185,6 +181,10 @@ function cmdInfra(args) {
       return cmdProvision(rest);
     case 'k3d':
       return cmdInfraK3d(rest);
+    case 'dns':
+      return runDns(rest);
+    case 'gateway':
+      return runGateway(rest);
     case 'help':
     case '--help':
     case '-h':
@@ -202,12 +202,16 @@ function printInfraHelp() {
 TLD: infra/addressing.yml. Projects declare isolation units, not engines.
 
 usage:
+  ${CLI} infra gateway start --config FILE [--apply]
+                                      explicit one-time Portless bootstrap
+  ${CLI} infra dns render --project ROOT --address IPv4 [--output DIR --apply]
+                                      DNS artifacts only; no host changes
   ${CLI} infra status                 compose catalog, tld, ready n/n
   ${CLI} infra up [engine …]          start those compose engines
   ${CLI} infra provision (mysql|pg) <name>
                                       one database + dedicated account
   ${CLI} infra k3d connect --cluster NAME
-                                      Cluster seat: link a k3d/k3s cluster to the compose network
+                                      link a k3d-managed cluster to the compose network
   ${CLI} infra k3d join --cluster NAME
                                       mark this computer on that cluster and count nodes and engines
   ${CLI} infra k3d status --cluster NAME
@@ -218,58 +222,6 @@ there is no down command.`);
 function cmdProvision(args) {
   const result = spawnSync('bash', [PROVISION, ...args], { stdio: 'inherit' });
   return result.status ?? 1;
-}
-
-function cmdSeat(args) {
-  const options = parseSeatCliArgs(args);
-  if (options.help) {
-    console.log(seatHelp(CLI));
-    return 0;
-  }
-  if (options.verb !== 'cluster' || !options.apply) return runSeat({ options });
-  const temporary = options.kubeconfig == null ? writeK3dKubeconfig(options.cluster) : null;
-  const kubeconfig = options.kubeconfig ?? temporary.file;
-  try {
-    return runSeat({ options: { ...options, kubeconfig, spec: { ...options.spec, kubeconfig } }, run });
-  } finally {
-    temporary?.cleanup();
-  }
-}
-
-function cmdPlan(args) {
-  const options = parsePlanCliArgs(args);
-  if (options.help) {
-    console.log(planHelp(CLI));
-    return 0;
-  }
-  return runPlan({ options });
-}
-
-function cmdUnderstory(args) {
-  const options = parseUnderstoryCliArgs(args);
-  if (options.help) {
-    console.log(understoryHelp(CLI));
-    return 0;
-  }
-  return runUnderstory({ options });
-}
-
-function cmdFacts(args) {
-  const options = parseFactsCliArgs(args);
-  if (options.help) {
-    console.log(factsHelp(CLI));
-    return 0;
-  }
-  return runFacts({ options });
-}
-
-function cmdHerbarium(args) {
-  const options = parseHerbariumCliArgs(args);
-  if (options.help) {
-    console.log(herbariumHelp(CLI));
-    return 0;
-  }
-  return runHerbarium({ options });
 }
 
 function cmdOverlay(args) {
@@ -505,45 +457,31 @@ function cmdInfraK3d(args) {
 function printHelp() {
   console.log(`${CLI} — Ground CLI (yaml is source of truth; the CLI paints it)
 
-Names: Ground, Seat, Plan, Facts.
-Cluster seat is the k3d/k3s backend (infra k3d). See docs/glossary.md.
-\`plan plan\` prints the Plan graph. \`seat plan\` prepares one seat.
+Reuse existing project commands; share local engines and record project values.
 
 machine (Ground — compose + addressing.yml):
+  ${CLI} infra dns --help              generate project-scoped DNS artifacts
   ${CLI} infra status                  catalog, tld, ready n/n
   ${CLI} infra up [engine …]           start those compose engines
   ${CLI} infra provision (mysql|pg) <name>
   ${CLI} infra k3d connect --cluster NAME
-                                       Cluster seat: link a k3d/k3s cluster to compose engines
+                                       link a k3d-managed cluster to compose engines
   ${CLI} infra k3d join --cluster NAME  mark this computer on that cluster; count nodes and engines
 
 first:
   ${CLI} doctor [--project ROOT] [--probe] [--json]   what this machine and project have; read-only, exit 1 on an invalid values file
-  ${CLI} capabilities [--json]              the verbs, the skills, optional deps, executables
+  ${CLI} capabilities [--json]              the verbs, Ground, backend executables
 
 project:
+  ${CLI} dev SERVICE [--env ENV --image REF] [--apply]   run and verify a named URL
   ${CLI} init [project-root] [--slug NAME]
-                                 [--engines a,b] [--services a,b] [--force]
+                                 [--context NAME] [--engines a,b] [--services a,b] [--infra machine|project] [--force]
   ${CLI} validate [project-root|profile]
   ${CLI} urls [project-root|profile] [--env NAME] [--json]
                                  print hostnames (no listener)
   ${CLI} setup [project-root|profile]  owner-authorized engines + DB/account provisioning
   ${CLI} overlay <verb> ...            create/attach/detach/destroy/status/touch/prune
   ${CLI} overlay verify [--image REF]   drive this project's adapter through the contract
-  ${CLI} seat <verb> ...         Seat: worktree, overlay env, journal. Does not launch an agent
-  ${CLI} plan <verb> ...      Plan: items, dependencies, budget, serve
-  ${CLI} understory graph|reading      Plan's graph as a Mermaid flowchart, and one readable line per item
-  ${CLI} facts <verb> ...     Facts: the assertion log, separate from Plan
-  ${CLI} herbarium check               links, copies, script, page length over the project's documents
-
-local overview:
-  ${CLI} canopy [--port N] [--once]    read-only dashboard at 127.0.0.1:7420; --once prints JSON
-
-isolated sample:
-  ${CLI} playground up [--dir PATH]   create a sandbox and start its baseline
-  ${CLI} playground status [--json]   sandbox processes, ports, names and isolation
-  ${CLI} playground down              stop sandbox processes and remove its directory
-
 up, status, provision are aliases of infra up|status|provision.
 there is no machine down command — several projects live on machine infra.`);
 }
@@ -555,10 +493,7 @@ function main(argv) {
     return 1;
   }
   const [command, ...rest] = parsed.args;
-  guardPlaygroundInvocation(parsed.args);
   switch (command) {
-    case 'playground':
-      return runPlayground(rest);
     case 'doctor':
     case 'capabilities':
       if (rest[0] === 'help' || rest[0] === '--help' || rest[0] === '-h') {
@@ -566,6 +501,8 @@ function main(argv) {
         return 0;
       }
       return runDoctor({ verb: command, args: rest });
+    case 'dev':
+      return runDev(rest);
     case 'init':
       return runInit(rest);
     case 'setup':
@@ -573,8 +510,10 @@ function main(argv) {
     case 'validate': {
       const profilePath = resolveProfilePath(optionalPathArg(rest, 'validate'));
       const profile = parseProfile(readFileSync(profilePath, 'utf8'), profilePath);
+      const runtime = requireKubernetesRuntime(profile, profilePath);
       const addressing = resolveAddressing(profile, { profilePath });
       console.log(formatValidateReport(profile, addressing));
+      console.log(`  runtime   1/1: ${runtime.backend}, context ${runtime.context} (configuration only)`);
       return 0;
     }
     case 'urls': {
@@ -588,18 +527,6 @@ function main(argv) {
     }
     case 'overlay':
       return cmdOverlay(rest);
-    case 'seat':
-      return cmdSeat(rest);
-    case 'plan':
-      return cmdPlan(rest);
-    case 'understory':
-      return cmdUnderstory(rest);
-    case 'facts':
-      return cmdFacts(rest);
-    case 'herbarium':
-      return cmdHerbarium(rest);
-    case 'canopy':
-      return runCanopy(rest);
     case 'infra':
       return cmdInfra(rest);
     case 'up':
@@ -641,8 +568,5 @@ if (isMain()) {
     console.error(`${CLI}: ${error.message}`);
     code = 1;
   }
-  // A seat journals the state-changing verbs it ran, whatever they returned.
-  // recordSeatCliEvent never throws: observing a command must not fail it.
-  recordSeatCliEvent(resolveInvocation(argv).args ?? argv, code);
   process.exitCode = code;
 }

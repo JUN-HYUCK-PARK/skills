@@ -7,18 +7,13 @@
 //   de-novo skills doctor [--project ROOT] [--json]
 //   de-novo skills capabilities [--json]
 import { createHash } from 'node:crypto';
-import { existsSync, readFileSync, readdirSync } from 'node:fs';
+import { accessSync, constants, existsSync, readFileSync, readdirSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { lookup } from 'node:dns/promises';
 import { parse } from 'yaml';
 
-import { GROUND_ADDRESSING_FILE, GROUND_ADDRESSING_LOCAL_FILE, loadGroundAddressing, renderProjectUrls, resolveAddressing } from './addressing.mjs';
-import { SEAT_PROFILE_RELPATH, parseSeatProfile, readSeatState } from './seat.mjs';
-import { LOCAL_RELPATH as PLAN_LOCAL, PLAN_RELPATH, parsePlanLocal, parsePlan, readMachine, resolveBudget } from './plan.mjs';
-import { resolveExecutable } from './plan-serve.mjs';
-import { VALUES_RELPATH as HERBARIUM_VALUES, parseHerbariumValues } from './herbarium.mjs';
-import { VALUES_RELPATH as FACTS_VALUES, describeMode, parseFactsValues } from './facts.mjs';
+import { GROUND_ADDRESSING_FILE, GROUND_ADDRESSING_LOCAL_FILE, renderProjectUrls, resolveAddressing } from './addressing.mjs';
 import { parseProfile } from './profile.mjs';
 import { wildcardExplanation } from './wildcards.mjs';
 
@@ -28,9 +23,19 @@ const RUNTIME_PROFILE = '.agents/runtime-profile.yml';
 // The Node range the suite has been run on: 24 in CI, 26 on a laptop.
 export const NODE_SUPPORTED = 24;
 export const STATES = Object.freeze(['ready', 'missing', 'invalid', 'unsupported', 'unknown']);
-// The executables a launch or a backend may need. Their absence is a fact,
+// The executables a backend may need. Their absence is a fact,
 // never an error: a project that names none of them needs none.
-const EXECUTABLES = Object.freeze(['git', 'docker', 'k3d', 'claude', 'codex']);
+const EXECUTABLES = Object.freeze(['git', 'docker', 'k3d']);
+
+// Resolve backend executables without launching or configuring a tool.
+function resolveExecutable(name, environment) {
+  for (const directory of (environment.PATH ?? '').split(path.delimiter)) {
+    if (!directory) continue;
+    const file = path.join(directory, name);
+    try { accessSync(file, constants.X_OK); return file; } catch {}
+  }
+  return null;
+}
 
 function fail(message) {
   throw new Error(`doctor: ${message}`);
@@ -77,27 +82,17 @@ export function publishedSkills(root = CATALOG_ROOT) {
 function catalogSection(environment) {
   const pkg = readCatalogPackage();
   const major = Number(process.versions.node.split('.')[0]);
-  const pty = existsSync(path.join(CATALOG_ROOT, 'node_modules', '@lydell', 'node-pty'));
   return {
     root: CATALOG_ROOT,
     package: pkg.name,
     version: pkg.version,
     node: row(major >= NODE_SUPPORTED ? 'ready' : 'unsupported', `${process.version}; the suite runs on ${NODE_SUPPORTED} and above`, { version: process.version, supported: `>=${NODE_SUPPORTED}` }),
     dependencies: row(existsSync(path.join(CATALOG_ROOT, 'node_modules', 'yaml')) ? 'ready' : 'missing', existsSync(path.join(CATALOG_ROOT, 'node_modules', 'yaml')) ? null : 'run npm install in the catalog checkout'),
-    pty: row(pty ? 'ready' : 'missing', pty ? 'plan serve can hold sessions' : 'optional: plan serve needs @lydell/node-pty; every other verb works without it'),
     addressing: row(existsSync(GROUND_ADDRESSING_FILE) ? 'ready' : 'missing', null, { file: GROUND_ADDRESSING_FILE, local: existsSync(GROUND_ADDRESSING_LOCAL_FILE) ? GROUND_ADDRESSING_LOCAL_FILE : null }),
     executables: Object.fromEntries(EXECUTABLES.map((name) => {
       const found = resolveExecutable(name, environment);
       return [name, row(found ? 'ready' : 'missing', found)];
     })),
-    machine_cap: (() => {
-      try {
-        const machine = readMachine(environment);
-        return row('ready', machine.parallel == null ? 'no cap' : `cap ${machine.parallel}`, { parallel: machine.parallel });
-      } catch (error) {
-        return row('invalid', error.message);
-      }
-    })(),
   };
 }
 
@@ -115,8 +110,7 @@ function findUpward(start, relatives) {
 
 export function resolveDoctorProject({ project = null, environment = process.env, cwd = process.cwd() }) {
   if (project != null) return path.resolve(cwd, project);
-  if (environment.SEAT_PROJECT) return path.resolve(cwd, environment.SEAT_PROJECT);
-  return findUpward(cwd, [RUNTIME_PROFILE, SEAT_PROFILE_RELPATH]);
+  return findUpward(cwd, [RUNTIME_PROFILE]);
 }
 
 // Which of the catalog's skills a project carries as copies, and whether
@@ -145,12 +139,7 @@ function skillCopies(root, catalogSkills) {
 
 function projectSection(root, environment) {
   const ground = valuesFile(path.join(root, RUNTIME_PROFILE), parseProfile);
-  const seat = valuesFile(path.join(root, SEAT_PROFILE_RELPATH), parseSeatProfile);
-  const plan = valuesFile(path.join(root, PLAN_RELPATH), parsePlan);
-  const local = valuesFile(path.join(root, PLAN_LOCAL), parsePlanLocal);
-  const facts = valuesFile(path.join(root, FACTS_VALUES), parseFactsValues);
-  const herbarium = valuesFile(path.join(root, HERBARIUM_VALUES), parseHerbariumValues);
-  const section = { root, ground: null, seat: null, plan: null, facts: null, herbarium: null, skills: skillCopies(root, publishedSkills()) };
+  const section = { root, ground: null, skills: skillCopies(root, publishedSkills()) };
 
   // Ground: the profile, the overlay mode, the backend it names, the hostnames it renders.
   if (ground.state === 'ready') {
@@ -171,50 +160,6 @@ function projectSection(root, environment) {
     section.ground = { profile: ground };
   }
 
-  // Seat: the profile and the registry, read only.
-  if (seat.state === 'ready') {
-    let registry = row('unknown');
-    const slug = seat.values.project?.slug ?? ground.values?.project?.slug ?? null;
-    if (slug == null) registry = row('invalid', `no slug: ${RUNTIME_PROFILE} is absent and the Seat profile declares none`);
-    else {
-      try {
-        const { state, file } = readSeatState(slug, environment);
-        const seats = Object.keys(state.seats).length;
-        registry = row('ready', `${seats} live seat${seats === 1 ? '' : 's'}`, { file, seats, repository: state.repository ?? null });
-      } catch (error) {
-        registry = row('invalid', error.message);
-      }
-    }
-    section.seat = { profile: row('ready', seat.values.worktrees == null ? 'seats adopt worktrees (no worktrees section)' : `worktrees under ${seat.values.worktrees.root}`, { file: seat.file }), registry };
-  } else {
-    section.seat = { profile: seat };
-  }
-
-  // Plan: the plan, the local file, the budget.
-  if (plan.state === 'ready') {
-    let budget = row('unknown');
-    if (local.state === 'invalid') budget = row('invalid', local.detail);
-    else {
-      try {
-        const resolved = resolveBudget({ plan: plan.values, local: local.state === 'ready' ? local.values : null, planFile: plan.file, localFile: local.file });
-        budget = row('ready', `parallel ${resolved.parallel} from ${resolved.source}`, resolved);
-      } catch (error) {
-        budget = row('missing', error.message.replace(/^plan: /, ''));
-      }
-    }
-    const tools = local.state === 'ready' ? Object.keys(local.values.tools) : [];
-    section.plan = { plan: row('ready', `${plan.values.tasks.length} item${plan.values.tasks.length === 1 ? '' : 's'}`, { file: plan.file }), local: local.state === 'ready' ? row('ready', tools.length === 0 ? 'no tool templates; serve cannot launch' : `tools ${tools.join(', ')}`, { file: local.file, tools }) : local, budget };
-  } else {
-    section.plan = { plan, local: local.state === 'invalid' ? local : undefined };
-    if (section.plan.local === undefined) delete section.plan.local;
-  }
-
-  section.facts = facts.state === 'ready'
-    ? { values: row('ready', describeMode(facts.values), { file: facts.file, judges: facts.values.judges ?? null, mode: facts.values.mode }) }
-    : { values: facts };
-  section.herbarium = herbarium.state === 'ready'
-    ? { values: row('ready', `${herbarium.values.public.length} public glob${herbarium.values.public.length === 1 ? '' : 's'}`, { file: herbarium.file }) }
-    : { values: herbarium };
   return section;
 }
 
@@ -224,12 +169,6 @@ function gates(project, catalog) {
   const out = [];
   if (project?.ground?.profile?.state === 'ready') {
     out.push({ gate: 'shared engines', why: 'setup and infra up start machine-shared engines several projects live on', how: 'a person runs de-novo skills setup or infra up' });
-  }
-  if (project?.plan?.local?.state === 'ready' && (project.plan.local.tools ?? []).length > 0) {
-    out.push({ gate: 'trust dialogs', why: 'serve grants no trust; a tool parked on its trust dialog shows as needs-input', how: 'plan attach <id> to answer it, or tools.<name>.pretrust_worktrees: true in the local file' });
-  }
-  if (project?.facts?.values?.state === 'ready' && project.facts.values.mode === 'permissive') {
-    out.push({ gate: 'fact commits', why: 'no judges are declared, so any named writer may commit a fact', how: 'declare judges in .agents/facts.yml for unattended runs' });
   }
   if (catalog.executables.docker.state === 'missing') {
     out.push({ gate: 'engine backend', why: 'docker is not on PATH; compose engines and k3d links cannot start here', how: 'install docker, or choose a backend the profile names' });
@@ -247,13 +186,6 @@ function nextSteps(project, catalog, root) {
   }
   if (project.ground.profile.state === 'missing') out.push(`no ${RUNTIME_PROFILE}: de-novo skills init ${root} plants one`);
   if (project.ground.profile.state === 'invalid') out.push(`fix ${RUNTIME_PROFILE}: ${project.ground.profile.detail}`);
-  if (project.seat.profile.state === 'missing') out.push(`no ${SEAT_PROFILE_RELPATH}: add one to seat workers (see the Seat reference)`);
-  if (project.seat.profile.state === 'invalid') out.push(`fix ${SEAT_PROFILE_RELPATH}: ${project.seat.profile.detail}`);
-  if (project.plan.plan.state === 'invalid') out.push(`fix ${PLAN_RELPATH}: ${project.plan.plan.detail}`);
-  if (project.plan.budget?.state === 'missing') out.push(`set parallel in ${PLAN_RELPATH} or ${PLAN_LOCAL}`);
-  if (project.plan.local?.state === 'invalid') out.push(`fix ${PLAN_LOCAL}: ${project.plan.local.detail}`);
-  if (project.facts.values.state === 'invalid') out.push(`fix ${FACTS_VALUES}: ${project.facts.values.detail}`);
-  if (project.herbarium.values.state === 'invalid') out.push(`fix ${HERBARIUM_VALUES}: ${project.herbarium.values.detail}`);
   const stale = Object.entries(project.skills).flatMap(([name, copies]) => copies.filter((copy) => copy.same_as_catalog === false).map((copy) => `${name} (${copy.path})`));
   if (stale.length > 0) out.push(`skill copies differ from this catalog's text: ${stale.join(', ')}; npx skills update refreshes them`);
   return out;
@@ -324,11 +256,9 @@ export function capabilitiesReport({ environment = process.env } = {}) {
   return {
     schemaVersion: DOCTOR_SCHEMA,
     catalog: { root: CATALOG_ROOT, package: pkg.name, version: pkg.version, node: catalog.node.version, node_supported: catalog.node.supported },
-    verbs: ['doctor', 'capabilities', 'init', 'validate', 'urls', 'setup', 'infra', 'overlay', 'seat', 'plan', 'understory', 'facts', 'herbarium', 'canopy', 'playground'],
+    verbs: ['doctor', 'capabilities', 'init', 'validate', 'urls', 'setup', 'infra', 'overlay', 'dev'],
     skills: publishedSkills().map(({ name, invocation }) => ({ name, invocation })),
-    optional: { pty: catalog.pty.state === 'ready' },
     executables: Object.fromEntries(Object.entries(catalog.executables).map(([name, value]) => [name, value.state === 'ready'])),
-    machine_cap: catalog.machine_cap.parallel ?? null,
     never: ['install', 'link', 'start an engine', 'seed trust', 'write a hook', 'write a database'],
   };
 }
@@ -361,7 +291,7 @@ function line(name, value) {
 
 export function formatDoctor(report) {
   const lines = [`■ de-novo skills doctor (read-only) · ${report.ok ? 'ok' : 'not ok'}`, `  catalog      ${report.catalog.package} ${report.catalog.version ?? '(no version)'} at ${report.catalog.root}`];
-  lines.push(line('node', report.catalog.node), line('deps', report.catalog.dependencies), line('pty', report.catalog.pty), line('addressing', report.catalog.addressing), line('machine cap', report.catalog.machine_cap));
+  lines.push(line('node', report.catalog.node), line('deps', report.catalog.dependencies), line('addressing', report.catalog.addressing));
   for (const [name, value] of Object.entries(report.catalog.executables)) lines.push(line(name, value));
   if (report.project == null) {
     lines.push('  project      none (not inside a project; pass --project ROOT)');
@@ -393,9 +323,7 @@ export function formatCapabilities(report) {
     `■ de-novo skills capabilities · ${report.catalog.package} ${report.catalog.version ?? '(no version)'} · node ${report.catalog.node} (supported ${report.catalog.node_supported})`,
     `  verbs        ${report.verbs.join(' ')}`,
     `  skills       ${report.skills.map((skill) => `${skill.name} (${skill.invocation})`).join(', ')}`,
-    `  pty          ${report.optional.pty ? 'ready' : 'missing (optional)'}`,
     `  executables  ${Object.entries(report.executables).map(([name, present]) => `${name} ${present ? 'ready' : 'missing'}`).join(' · ')}`,
-    `  machine cap  ${report.machine_cap ?? 'none'}`,
     `  never        ${report.never.join(', ')}`,
   ].join('\n');
 }
@@ -416,10 +344,10 @@ export function doctorHelp(cli = 'de-novo skills') {
   return `what this machine and this project have, before anything runs (read-only)
 
 usage:
-  ${cli} doctor [--project ROOT] [--probe] [--json]   catalog version, Node, optional deps, executables, the project's values files
-                                            (Ground, Seat, Plan, Facts, herbarium), skill copies, the gates a
+  ${cli} doctor [--project ROOT] [--probe] [--json]   catalog version, Node, dependencies, backend executables, the Ground profile,
+                                            skill copies, the gates a
                                             person owns, and the next step for each thing missing or invalid
-  ${cli} capabilities [--json]               the verbs, the skills with their invocation, optional deps, executables
+  ${cli} capabilities [--json]               the verbs, the skills with their invocation, dependencies, backend executables
 
 --probe asks this machine's resolver for each rendered hostname and says,
 per name, what was and was not observed: dns yes or no; listener, route,

@@ -1,113 +1,96 @@
 ---
 name: ground
 description: >-
-  de-novo Ground — shared local base on one machine. n projects, m apps each,
-  one infra set. Names instead of ports; thin overlays instead of cloned stacks.
-  Use when starting, checking, or switching a local environment; when matching
-  ports; when several agents work and verify on the same machine at once; when
-  planting Ground on a new project; when managing machine-shared engines
-  (de-novo skills infra); when the user runs /ground or /ground infra. Project
-  values live in .agents/runtime-profile.yml. Browser QA and e2e runners are
-  out of scope.
+  Ground simplifies local development on one machine: existing project commands,
+  service addresses and ports, shared infrastructure, and project data isolation.
+  Use when starting, checking, or switching a local environment, resolving port
+  conflicts, adopting a shared engine set, or when the user runs /ground.
+  Project values live in .agents/runtime-profile.yml.
 ---
 
 # Ground
 
-Keep one standing app baseline per project and share engines through the backend the
-project chose. Add thin overlays only when parallel work needs them.
+Reuse the project's existing development procedure. Keep one app baseline per
+project and share engines where the project has chosen to. Values and executable
+commands belong in `.agents/runtime-profile.yml`; read it before acting and do
+not invent missing commands. Schema: [runtime-profile.md](references/runtime-profile.md).
 
-This file owns the operating pattern. Project values and executable commands
-belong in `.agents/runtime-profile.yml`. Read it before acting; do not invent
-missing commands. Schema: [runtime-profile.md](references/runtime-profile.md).
-Human diagram and CLI onboarding: [README.md](README.md).
+## Adopt an existing environment
 
-## Plant it
+Ground requires Kubernetes for app workloads. k3s, k3d-managed k3s, and an
+existing Kubernetes cluster are eligible. A Docker provider hosts the runtime;
+it does not replace the Kubernetes requirement. Compose is for shared data engines.
 
-For a repository without a profile, follow
-[Apply to a project](references/planting.md#apply-to-a-project): measure the existing
-project before writing its values. That procedure owns the planting steps.
+Before configuration, confirm the Kubernetes context, namespace, entrypoint
+Service mappings, domains, and data ownership. Reuse settled answers; ask only
+for missing choices. Machine gateway bootstrap is explicit and separate from
+routine work. Record its values in repo-local configuration.
 
-## First actions
+For named access, opt into the Portless gateway and follow the
+[named-access procedure](../../infra/access/README.md). That procedure owns
+one-time HTTPS/name-resolution setup, startup, public readiness, and cleanup.
+It reuses Portless; no agent launcher or custom proxy is introduced.
 
-Run these in order before changing anything. Each one counts what it saw.
+A project may retain its own ingress instead; the [DNS procedure](../../infra/dns/README.md)
+applies there. Kubernetes Service DNS remains internal to the selected cluster.
+Keep host app names and cluster Service names distinct.
 
-1. `de-novo skills validate <project-root>` — configuration invariants only.
-   It does not acquire ownership, probe health, or verify routing.
-2. `de-novo skills urls <project-root>` — the names this project uses. Ground
-   prints them; the project's listener routes them.
-3. If `runtime.commands.status` exists, run that project command from the
-   designated runtime location. `de-novo skills status` is the machine engine
-   report, not the project's status.
-4. If `runtime.commands.overlay` exists, `de-novo skills overlay status`.
+Record the context with `init --context NAME` and data ownership with
+`--infra machine|project`. Initialization without a context is an incomplete
+draft. Profile fields: [runtime requirements](references/runtime-profile.md#environment-choice).
+Do not migrate or stop shared data engines to adopt Kubernetes.
 
-Machine engines (`/ground infra`): `de-novo skills infra status` reads. `infra
-up`, `infra provision`, `setup`, and `infra k3d connect` mutate the shared
-engine set and need the machine owner's authorization. Their effects and
-execution conditions live in the CLI checkout's `infra/README.md`, not here.
-There is no down command.
+## Inspect and run
 
-## Addressing and isolation
+1. Validate the project profile. Observe its actual target and status through
+   the project's existing procedure before mutation.
+2. For a configured named entrypoint, inspect `de-novo skills dev` without
+   applying, then apply the agreed target. The command deploys or attaches,
+   connects, registers, and verifies the public URL before reporting ready.
+3. Keep the foreground session while working. Its readiness message is a
+   measured startup observation, not a claim that an application can never fail.
+4. End the session normally so it removes its route, forwarding process and
+   newly created overlay. The baseline and machine gateway remain available.
 
-Use the profile's names and port registry. Named URLs do not prove DNS,
-listener, routing, certificate names, or application readiness; each is
-its own observation, and `doctor --probe` measures the first. Ground prints
-names; the project's chosen listener routes them. A proxy declaration is
-intent, not a process.
-
-Share engines and isolate each project's data with its namespace and permitted
-accounts or prefixes. The catalog's machine backend is optional. When chosen,
-use its existing engine set; do not duplicate it inside the consuming project.
-Other backends retain their own documented ownership and operating procedure.
+`urls` remains a read-only name renderer. A printed name is not a ready URL.
+Other runtime actions use only the project's configured commands and ownership
+mechanism. Never start a competing baseline from another worktree.
 
 ## Runtime ownership
 
-Many readers, one runtime writer. A profile declaring one writer is a policy,
-not a lock. Before any baseline mutation:
+Many readers, one baseline writer. Before changing a shared app baseline, read
+its status and operating procedure, identify the writer and runtime location,
+and obtain ownership through the project's existing mechanism. A profile's
+writer count is a policy, not a lock. If ownership cannot be established, report
+what is missing before mutating. Verify the result and hand ownership back.
+Do not start a competing baseline from another worktree.
 
-1. Read the project's runtime status and operating documentation to identify
-   the current writer, designated runtime location, and ownership mechanism.
-2. Use that mechanism to obtain ownership, or send the need to the current
-   owner through an already authorized channel. If ownership cannot be
-   established, report the missing information and stop before mutation.
-3. Execute only configured commands from the designated runtime location.
-   Never start a competing baseline from an agent worktree. Verify the change,
-   then release or hand back ownership through the same project mechanism.
+Existing authorization remains valid for its target and scope. Machine engine
+starts, restarts, provisioning, and shared migrations require the machine
+owner's authorization. Inspection alone does not grant it. Machine effects and
+commands: the CLI checkout's `infra/README.md`. There is no machine down command.
 
-Command presence is capability, not authorization. Existing task authorization
-remains valid for its stated target and scope; do not ask for it again.
-Shared engine starts, restarts, provisioning, and migrations require the
-machine owner's authorization. Routine inspection or app work does not grant
-it. Data creation must use the profile's permitted fixture paths, with a
-before/after probe; never write directly to shared databases.
+## Shared data
 
-When profiles compete for fixed resources, switch through the owner. Do not
-stop machine infrastructure to switch an app profile.
+Use the chosen backend's existing engine set. Separate projects by database,
+account, namespace, or prefix. Use the profile's permitted fixture paths and
+check their results; never write directly to shared databases. Switching app
+profiles must not stop machine infrastructure.
 
-## Overlay work
+## Verify the development loop
 
-Leave overlays off unless the profile enables them and supplies its overlay
-command. Attach only changed services permitted by the profile; shared-only
-services always remain on baseline. The project owns image builds, workloads,
-and fallthrough routing. Use exact revisions and verify runtime identity.
+Use the service's measured reflection mode to decide whether a change needs
+source reload, restart, or rebuild. Observe the affected running application
+before claiming success. Count what was checked and name unmeasured boundaries.
+Configuration validation alone does not establish runtime health or routing.
+Browser QA and e2e remain with the project's existing verification procedure.
 
-Operate through `de-novo skills overlay`, never the project overlay command.
-Why, and every lifecycle rule (plans, application, readiness, pending-operation
-recovery, leases, cleanup, concurrency) have one authority:
-[overlay-contract.md](references/overlay-contract.md). Writing that project
-command, and checking it with `de-novo skills overlay verify`:
-[adapter.md](references/adapter.md).
+## Optional overlays
 
-Renew the lease during long work. Detach unused overrides and destroy the
-environment when the task ends. Stale cleanup is an explicit backstop, not the
-normal completion path. Overlay locks do not establish baseline writer
-ownership.
+Only when the profile enables overlays and supplies a command, use
+`de-novo skills overlay` and follow the [lifecycle contract](references/overlay-contract.md).
+That reference owns revision checks, recovery, leases, and cleanup. The named
+entrypoint command integrates that same contract rather than bypassing it. Keep this
+extension out of ordinary setup when a project does not need concurrent instances.
 
-## Verification
-
-Use each service's measured reflection mode to determine how an edit lands.
-Check the affected runtime before claiming the change is visible. Count the
-artifacts actually observed and distinguish configuration validation, runtime
-identity, readiness, and routing. Report an unmeasured boundary as such.
-
-Keep browser QA and e2e procedures in the consuming project's verification
-tools. They are outside this skill's ownership.
+Ground does not configure harnesses, agent tools, hooks, sessions, or task assignment.

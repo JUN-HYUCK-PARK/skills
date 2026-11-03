@@ -133,7 +133,7 @@ automatically. Inspect it, then clean it explicitly with
 ## Plan and apply
 
 `overlay.create_on` says when an environment comes into being. `plan` (default):
-whoever seats a worker creates it first (`create --apply`), before any attach.
+the runtime operator creates it first (`create --apply`), before any attach.
 `attach`: the first applied `attach` for an untracked environment runs the
 project `create` as its own journaled mutation, from the caller's directory,
 immediately before the attach. Use `attach` for backends that bind an
@@ -161,7 +161,7 @@ cwd     = project root containing .agents/runtime-profile.yml
 timeout = 120000ms
 argv    = configured command + verb + lifecycle arguments
 env     = the caller's environment + GROUND_CALLER_CWD (the directory the Ground
-          command was run from, resolved; a seat worktree when a worker calls)
+          command was run from, resolved; the invoking worktree)
 ```
 
 `GROUND_CALLER_CWD` lets an adapter default a per-environment worktree without a

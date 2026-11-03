@@ -1,5 +1,5 @@
 // Resolve hostnames from in-repo yaml. No home-directory config.
-// Precedence for tld: project .local.yml → profile → ground .local.yml → ground addressing.yml → localhost.
+// Precedence for tld: project .local.yml → profile → ground .local.yml → ground addressing.yml → ground.test.
 import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -169,7 +169,7 @@ function firstDefined(pairs) {
   for (const [value, source] of pairs) {
     if (value != null && value !== '') return { value, source };
   }
-  return { value: 'localhost', source: 'default' };
+  return { value: 'ground.test', source: 'default' };
 }
 
 export function resolveAddressing(profile, options = {}) {

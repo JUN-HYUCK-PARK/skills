@@ -34,6 +34,23 @@ The engine catalog is this compose file. Engine id is the compose profile.
 `ground.provision` / `ground.aliases` labels teach the CLI; do not add a second
 list. A project starts only `data.engines`. `up` with no names starts nothing.
 
+## Backend scope
+
+This directory implements the shared Compose engine set and optional k3d links.
+App workloads require a confirmed Kubernetes context and working DNS.
+The named-access command invokes the project's configured deployment/overlay
+procedure. Confirm the target and data ownership; see the [profile boundaries](../skills/ground/references/runtime-profile.md#environment-choice).
+
+A Docker provider such as OrbStack must expose the Docker interface these
+commands use. Inspect that provider's active environment and verify connectivity;
+Ground does not install it or switch Docker/Kubernetes contexts.
+
+Generate per-project DNS files with `de-novo skills infra dns render`; this
+command changes no host settings. DNS installation and adoption checks: [local DNS](dns/README.md).
+
+Named URL startup, explicit shared gateway setup and cleanup:
+[named access](access/README.md).
+
 ## Start
 
 These mutation commands require machine-owner authorization for the named
@@ -77,12 +94,11 @@ From a container in a project compose, use `host.docker.internal:<port>`, or
 join the external network `dev-infra` and the container name (kafka:
 `dev-kafka:19092`).
 
-User-facing name for this k3s/k3d backend: **Cluster seat**. `infra k3d`
-links compose engines into a cluster as `ground-infra` Services. The seat's
-own Namespace is `de-novo skills seat cluster`, not this command. Neither
-command creates a cluster, and neither defaults to `local`. What may leave
-a seat, when a project constrains that, is called Egress; this catalog has
-no network allowlist to configure. Names: [glossary](../docs/glossary.md).
+### Optional k3d engine linking
+
+`infra k3d` links compose engines into
+an explicitly named cluster as `ground-infra` Services. It does not create a
+cluster or select the project's existing app cluster by default.
 
 k3d / Kubernetes on the same Docker engine: engines bind `127.0.0.1`, so
 `host.k3d.internal:<port>` does **not** connect (measured: MySQL 2003/111).
@@ -93,8 +109,9 @@ project's **app** cluster (often the existing `local` that already owns
 is required and never defaults to `local`. `--cluster local` warns, then
 continues only because a human passed it.
 
-Create a **separate** engine-link cluster on `dev-infra`, not the machine's
-existing one that already owns `:80`:
+Only when the person chooses a new k3d engine-link cluster, this is an example
+of a separate cluster on `dev-infra`. It is not an onboarding requirement;
+cluster creation requires its own authorization:
 
 ```bash
 k3d cluster create ground-qa \

@@ -7,8 +7,7 @@ still owns its pattern.
 
 This checkout is a **skill catalog**, not a consuming app. Do not plant
 `.agents/runtime-profile.yml` here — that file belongs in projects that *use*
-Ground. `.agents/seat-profile.yml` *is* here: the catalog seats its own
-workers with Seat (worktrees and reports, no overlay envs).
+Ground. This catalog does not configure harnesses, agent tools, or workers.
 
 Remote: `git@github.com:de-novo/skills.git`. CLI: `de-novo skills` (alias `de-novo-skills`).
 
@@ -16,7 +15,7 @@ Remote: `git@github.com:de-novo/skills.git`. CLI: `de-novo skills` (alias `de-no
 
 | Fact | Home |
 | --- | --- |
-| Product names (Ground, Seat, Plan, Facts, Cluster seat, Egress) | `docs/glossary.md` |
+| Terminology | `docs/glossary.md` |
 | Published skill (pattern) | `skills/<name>/SKILL.md` |
 | Human diagram / apply | `skills/<name>/README.md` |
 | Ground profile schema | `skills/ground/references/runtime-profile.md` |
@@ -27,24 +26,21 @@ Remote: `git@github.com:de-novo/skills.git`. CLI: `de-novo skills` (alias `de-no
 | CLI | `infra/bin/cli.mjs` |
 | Doctor and capabilities (read-only entry point) | `infra/lib/doctor.mjs` only |
 | Profile parse + invariants | `infra/lib/profile.mjs` only |
-| Seat profile schema + CLI | `skills/seat/references/seats.md` |
-| Seat profile parse + seat registry | `infra/lib/seat.mjs` only |
-| Plan schema + CLI | `skills/plan/references/plan.md` |
-| Plan parse + allocation rule | `infra/lib/plan.mjs` only |
-| Path claims (normalize, intersect, match a seat's changes) | `infra/lib/claims.mjs` only |
-| Understory document shape | `skills/understory/references/document.md` |
-| Understory graph + reading lines | `infra/lib/understory.mjs` only |
-| Facts envelope, transitions, CLI | `skills/facts/references/log.md` |
-| Facts log fold + conflict rule | `infra/lib/facts.mjs` only |
+| Named access startup + cleanup | `infra/lib/dev.mjs` |
+| Explicit Portless gateway bootstrap + config | `infra/lib/gateway.mjs`; `infra/access/README.md` |
+| DNS rendering and CLI | `infra/lib/dns.mjs` |
+| DNS setup procedure | `infra/dns/README.md` |
 | Hostname render | `infra/lib/addressing.mjs` |
 | DNS and TLS wildcard rules (as their RFCs state them) | `infra/lib/wildcards.mjs` only |
 | How to work in this catalog | this file |
 | Agent skill load paths | `.agents/` (see `.agents/README.md`) |
-| Herbarium houses and check | `skills/herbarium/references/houses.md`; parse and counts in `infra/lib/herbarium.mjs` only |
+| Repository documentation checks | `scripts/check-docs.mjs`, `scripts/lib/docs.mjs`, `scripts/docs.yml` |
 | Plugin manifest (install as a Claude Code plugin) | `.claude-plugin/plugin.json`; CI diffs it against `skills/*/` |
 | Skill invocation policy (user- vs model-invoked) | each `skills/<name>/SKILL.md` frontmatter + `agents/openai.yaml`; the rule is in the catalog skill |
 
-Do not copy a fact into a second house. Point.
+Do not copy a fact into a second house. Point. Keep human pages short, put
+reference details behind links, and use existing command help as the lookup.
+Retired designs are dated records under `docs/archive/`, with replacement links.
 
 ## Layout
 
@@ -53,11 +49,8 @@ AGENTS.md        this file
 CLAUDE.md        pointer here — do not duplicate
 .agents/         load adapter + repo-only skills
 skills/          published skill sources
-  ground/         first skill
-  seat/         seats on Ground (no agent launch)
-  plan/      plan + budget + allocator over Seat seats
-  understory/    the graph drawn and written up for people
-  facts/      the facts under the forest: an assertion log per project
+  ground/         local infrastructure and development environments
+scripts/         repository-only checks
 infra/           machine-shared engines Ground's CLI drives
 docs/            glossary.md (product names), then design notes (not the user-facing spec)
 ```
@@ -103,7 +96,8 @@ Values may change. These may not.
 - **Overlay is opt-in.** Default `overlay: none`. Run overlay verbs only when
   `runtime.commands.overlay` exists.
 - **Proxy omit = `none`.** Do not default a listener onto `:80`. `urls`
-  prints names; this repo does not start Caddy. `proxy: machine` is intent.
+  prints names; this repo does not start Caddy. Only explicit Portless gateway
+  configuration plus bootstrap may bind its selected port. `proxy: machine` is intent.
 - **Addressing lives in repo files.** Not `~/.dev-infra`. Clone TLD is
   `infra/addressing.local.yml` or the project's `.agents/runtime-profile.local.yml`.
 - **Compose is the engine catalog.** Do not keep a second name list. Machine
@@ -111,8 +105,9 @@ Values may change. These may not.
   units on that set. `infra up` with no names starts nothing. k3d links with
   `infra k3d connect --cluster <name>` — never default to the existing `local`
   cluster.
-- **One backend is not required.** k3d, compose, and this `infra/` are
-  backends a profile may choose. The skill does not require them.
+- **Kubernetes apps are required.** Apps run on an explicitly selected Kubernetes
+  context (including k3s/k3d). Compose remains the shared data-engine backend.
+  DNS setup and verification are part of adoption; never infer the target context.
 
 ## Verify
 
@@ -120,11 +115,10 @@ Values may change. These may not.
 npm test          # node --test 'infra/bin/*.test.mjs'
 ```
 
-The runner prints how many tests ran. Docker is not required for validate /
-init tests, nor for the playground sandbox arcs the suite runs
-(`infra/bin/playground.test.mjs`, `infra/bin/facts-arc.test.mjs`): those
-seat a real Seat worker in a throwaway sandbox and tear it down. Do not
-start or stop shared engines to land a docs or parser change.
+The runner prints how many tests ran. Docker is not required for profile and
+init checks or the process-based overlay tests. Do not start or stop shared
+engines to land a docs or parser change. Run `npm run check:docs` for repository
+documentation checks; consumers do not install that checker.
 
 Every PR must preserve its execution evidence in the PR description. Record
 the candidate SHA and target, the exact commands that ran, the observed and
@@ -181,7 +175,7 @@ Guesses stay out. Dated incidents only.
 ## Do not
 
 - Commit or push unless the task asks.
-- Invent a required backend, a `qa:` profile field, or a down command.
+- Invent a target Kubernetes context, a `qa:` profile field, or a down command.
 - Copy `skills/ground/SKILL.md` into a profile, this file, or a tool-specific
   skills directory.
 - Add an `AGENTS.md` under `skills/` or `infra/` unless that tree truly has
